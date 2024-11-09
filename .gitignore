@@ -5,3 +5,4 @@ mnist-inrs
 __pycache__
 *.pyc
 .vscode
+lightning_logs
