@@ -1,7 +1,13 @@
 import typer
 import pytorch_lightning as pl
+import torch
 
 from models import Autoencoder
+import sys
+
+sys.path.append('./data')
+
+from irn_dataset import DataHandler
 
 app = typer.Typer()
 
@@ -14,6 +20,17 @@ def test(name: str):
 @app.command()
 def train():
     # TODO: accept config to run, for now just run the default
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+    hparams = {'split_ratio': [80,10,10],
+               'device': device,
+               'batch_size': 8,
+               'num_workers': 4}
+
+    data_handler = DataHandler(hparams, "data/mnist-inrs", "cifar10_png_train_airplane_")
+    train_loader = data_handler.train_dataloader()
+    val_loader = data_handler.val_dataloader()
+
     trainer = pl.Trainer()
 
     ddconfig = {
@@ -31,7 +48,7 @@ def train():
 
     model = Autoencoder(ddconfig=ddconfig, embed_dim=256)
     # model = Identity()
-    trainer.fit(model=model, train_dataloaders=None, val_dataloaders=None)
+    trainer.fit(model=model, train_dataloaders=train_loader, val_dataloaders=val_loader)
 
 
 if __name__ == "__main__":

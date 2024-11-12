@@ -23,19 +23,18 @@ class IRNDataset(Dataset):
         return len(self.files)
     
 class DataHandler:
-    def __init__(self, hparams, zip_path, fileprefix, extract=False):
+    def __init__(self, hparams, data_folder, fileprefix, extract=False):
         self.hparams = hparams
         self.split_ratio = hparams['split_ratio'] 
-        self.data_path = zip_path
-
-        folder_name = "mnist_data"
+        self.data_path = data_folder
 
         # Extract zip file containing training data
         if extract:
-            data_utils.extract_archive(zip_path, folder_name)
+            zip_folder = data_folder + ".zip"
+            data_utils.extract_archive(zip_folder, data_folder)
 
         # Extract all file paths   
-        folder_path = os.path.join(folder_name, "mnist-inrs")
+        folder_path = os.path.join(data_folder, "mnist-inrs")
         self.files = [os.path.join(os.path.join(os.path.join(folder_path,f), "checkpoints"), 
                                    "model_final.pth") for f in os.listdir(folder_path) 
                                    if f.startswith(fileprefix)]
