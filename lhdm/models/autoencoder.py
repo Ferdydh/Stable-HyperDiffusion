@@ -5,7 +5,7 @@ from torch import Tensor
 from jaxtyping import Float
 from typeguard import typechecked
 
-from models.losses import normal_kl, mse_loss
+from models.losses import mse_loss
 from models.base import Decoder, Encoder
 
 

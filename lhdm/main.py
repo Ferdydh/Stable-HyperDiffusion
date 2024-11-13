@@ -1,11 +1,15 @@
 import typer
 import pytorch_lightning as pl
 import torch
+from pytorch_lightning.loggers import WandbLogger
 
 from models import Autoencoder
 from data.irn_dataset import DataHandler
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
+
+
+wandb_logger = WandbLogger(log_model="all")
 
 
 @app.command()
@@ -29,7 +33,7 @@ def train():
     train_loader = data_handler.train_dataloader()
     val_loader = data_handler.val_dataloader()
 
-    trainer = pl.Trainer()
+    trainer = pl.Trainer(logger=wandb_logger)
 
     ddconfig = {
         "input_dim": 1185,
