@@ -15,7 +15,6 @@ class IRNDataset(Dataset):
 
     def __getitem__(self, index):
         file_path = self.files[index]
-        print(file_path)
         state_dict = torch.load(file_path, map_location=self.device)
         weights = []
         for weight in state_dict.values():

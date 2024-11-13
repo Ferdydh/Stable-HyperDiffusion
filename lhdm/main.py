@@ -32,20 +32,14 @@ def train():
     trainer = pl.Trainer()
 
     ddconfig = {
-        "double_z": True,
-        "z_channels": 64,
-        "resolution": 256,
-        "in_channels": 3,
-        "out_ch": 3,
-        "ch": 128,
-        "ch_mult": [1, 1, 2, 2, 4, 4],  # num_down = len(ch_mult)-1
-        "num_res_blocks": 2,
-        "attn_resolutions": [16, 8],
-        "dropout": 0.0,
+        "input_dim": 1185,
+        "output_dim": 1185,
+        "hidden_dim": 64,
+        "z_dim": 16,
     }
 
-    model = Autoencoder(ddconfig=ddconfig, embed_dim=256)
-    # model = Identity()
+    model = Autoencoder(ddconfig=ddconfig, embed_dim=16)
+
     trainer.fit(model=model, train_dataloaders=train_loader, val_dataloaders=val_loader)
 
 
