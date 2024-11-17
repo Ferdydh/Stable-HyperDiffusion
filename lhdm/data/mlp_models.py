@@ -6,53 +6,28 @@ import torch.nn.functional as F
 from torch import distributions as dist
 from torch import nn
 
-from embedder import Embedder
-
 
 class MLP(nn.Module):
-    def __init__(
-        self,
-        in_size,
-        out_size,
-        hidden_neurons,
-        use_tanh=True,
-        over_param=False,
-        use_bias=True,
-    ):
+    def __init__(self, hparams):
         super().__init__()
-        multires = 1
-        self.over_param = over_param
-        if not over_param:
-            self.embedder = Embedder(
-                include_input=True,
-                input_dims=2,
-                max_freq_log2=multires - 1,
-                num_freqs=multires,
-                log_sampling=True,
-                periodic_fns=[torch.sin, torch.cos],
-            )
-        self.layers = nn.ModuleList([])
-
-        self.layers.append(nn.Linear(in_size, hidden_neurons[0], bias=use_bias))
-        for i, _ in enumerate(hidden_neurons[:-1]):
-            self.layers.append(
-                nn.Linear(hidden_neurons[i], hidden_neurons[i + 1], bias=use_bias)
-            )
-        self.layers.append(nn.Linear(hidden_neurons[-1], out_size, bias=use_bias))
-        self.use_tanh = use_tanh
+        self.relu = nn.ReLU()
+        self.seq = nn.Sequential(
+            nn.Linear(hparams["input_size"], hparams["hidden_size"]),
+            #nn.ReLU(),
+            nn.Linear(hparams["hidden_size"], hparams["hidden_size"]),
+            #nn.ReLU(),
+            nn.Linear(hparams["hidden_size"], hparams["output_size"])
+        )
 
     def forward(self, x):
-        if not self.over_param:
-            x = self.embedder.embed(x)
-        for i, layer in enumerate(self.layers[:-1]):
-            x = layer(x)
-            x = F.relu(x)
-        x = self.layers[-1](x)
-        if self.use_tanh:
-            x = torch.tanh(x)
-        return x, None
+        x = self.seq[0](x)
+        x = self.relu(x)
+        x = self.seq[1](x)
+        x = self.relu(x)
+        x = self.seq[2](x)
+        return x
 
-
+"""
 class MLP3D(nn.Module):
     def __init__(
         self,
@@ -106,3 +81,4 @@ class MLP3D(nn.Module):
         x = dist.Bernoulli(logits=x).logits
 
         return {"model_in": coords_org, "model_out": x}
+"""

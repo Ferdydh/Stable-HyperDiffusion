@@ -27,9 +27,10 @@ def train():
         "device": device,
         "batch_size": 8,
         "num_workers": 4,
+        "sample_limit": 1
     }
 
-    data_handler = DataHandler(hparams, "data", "cifar10_png_train_airplane_")
+    data_handler = DataHandler(hparams, "data/mnist-inrs", "cifar10_png_train_airplane_")
     train_loader = data_handler.train_dataloader()
     val_loader = data_handler.val_dataloader()
 

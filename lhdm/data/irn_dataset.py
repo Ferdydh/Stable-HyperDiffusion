@@ -1,8 +1,8 @@
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 import os
-from data import data_utils
 import multiprocessing
+import random
 
 # Ensure 'spawn' start method is set globally for multiprocessing
 multiprocessing.set_start_method("spawn", force=True)
@@ -17,9 +17,13 @@ class IRNDataset(Dataset):
         file_path = self.files[index]
         state_dict = torch.load(file_path, map_location=self.device)
         weights = []
+        #print(state_dict.keys())
         for weight in state_dict.values():
             weights.append(weight.flatten())
         return torch.hstack(weights)
+    
+    def get_state_dict(self, index):
+        return torch.load(self.files[index], map_location=self.device)
 
     def __len__(self):
         return len(self.files)
@@ -31,34 +35,31 @@ class DataHandler:
         self.split_ratio = hparams["split_ratio"]
         self.data_path = data_folder
 
-        # Extract zip file containing training data
-        if extract:
-            zip_folder = data_folder + ".zip"
-            data_utils.extract_archive(zip_folder, data_folder)
-
-        # Extract all file paths
-        folder_path = os.path.join(data_folder, "mnist-inrs")
         self.files = [
             os.path.join(
-                os.path.join(os.path.join(folder_path, f), "checkpoints"),
+                os.path.join(os.path.join(data_folder, f), "checkpoints"),
                 "model_final.pth",
             )
-            for f in os.listdir(folder_path)
+            for f in os.listdir(data_folder)
             if f.startswith(fileprefix)
         ]
 
-        # Split up into datasets according to split ratio
-        train_dataset_length = int(len(self.files) * self.split_ratio[0] / 100)
-        val_dataset_length = int(len(self.files) * self.split_ratio[1] / 100)
-        test_dataset_length = int(
-            len(self.files) - train_dataset_length - val_dataset_length
-        )
-        train_dataset, val_dataset, test_dataset = random_split(
-            self.files, [train_dataset_length, val_dataset_length, test_dataset_length]
-        )
-        self.train_dataset = IRNDataset(train_dataset, device=hparams["device"])
-        self.val_dataset = IRNDataset(val_dataset, device=hparams["device"])
-        self.test_dataset = IRNDataset(test_dataset, device=hparams["device"])
+        if "sample_limit" in hparams:
+            self.files = random.sample(self.files, hparams["sample_limit"])
+            self.train_dataset = self.val_dataset = self.test_dataset = IRNDataset(self.files, device=hparams["device"])
+        else:
+            # Split up into datasets according to split ratio
+            train_dataset_length = int(len(self.files) * self.split_ratio[0] / 100)
+            val_dataset_length = int(len(self.files) * self.split_ratio[1] / 100)
+            test_dataset_length = int(
+                len(self.files) - train_dataset_length - val_dataset_length
+            )
+            train_dataset, val_dataset, test_dataset = random_split(
+                self.files, [train_dataset_length, val_dataset_length, test_dataset_length]
+            )
+            self.train_dataset = IRNDataset(train_dataset, device=hparams["device"])
+            self.val_dataset = IRNDataset(val_dataset, device=hparams["device"])
+            self.test_dataset = IRNDataset(test_dataset, device=hparams["device"])
 
     def train_dataloader(self):
         return DataLoader(
@@ -83,3 +84,6 @@ class DataHandler:
             num_workers=self.hparams["num_workers"],
             shuffle=False,
         )
+
+    def get_state_dict(self, index):
+        return self.train_dataset.get_state_dict(index) 
