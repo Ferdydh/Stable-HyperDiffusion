@@ -27,14 +27,16 @@ def train():
         "device": device,
         "batch_size": 8,
         "num_workers": 4,
-        "sample_limit": 1
+        "sample_limit": 1,
     }
 
-    data_handler = DataHandler(hparams, "data/mnist-inrs", "cifar10_png_train_airplane_")
+    data_handler = DataHandler(
+        hparams, "data/mnist-inrs", "cifar10_png_train_airplane_"
+    )
     train_loader = data_handler.train_dataloader()
     val_loader = data_handler.val_dataloader()
 
-    trainer = pl.Trainer(logger=wandb_logger)
+    trainer = pl.Trainer(logger=wandb_logger, max_epochs=5)
 
     ddconfig = {
         "input_dim": 1185,

@@ -15,15 +15,18 @@ class IRNDataset(Dataset):
 
     def __getitem__(self, index):
         file_path = self.files[index]
-        state_dict = torch.load(file_path, map_location=self.device)
+        # Add weights_only=True since you're only accessing weights
+        state_dict = torch.load(file_path, map_location=self.device, weights_only=True)
         weights = []
-        #print(state_dict.keys())
         for weight in state_dict.values():
             weights.append(weight.flatten())
         return torch.hstack(weights)
-    
+
     def get_state_dict(self, index):
-        return torch.load(self.files[index], map_location=self.device)
+        # Add weights_only=True here too
+        return torch.load(
+            self.files[index], map_location=self.device, weights_only=True
+        )
 
     def __len__(self):
         return len(self.files)
@@ -46,7 +49,9 @@ class DataHandler:
 
         if "sample_limit" in hparams:
             self.files = random.sample(self.files, hparams["sample_limit"])
-            self.train_dataset = self.val_dataset = self.test_dataset = IRNDataset(self.files, device=hparams["device"])
+            self.train_dataset = self.val_dataset = self.test_dataset = IRNDataset(
+                self.files, device=hparams["device"]
+            )
         else:
             # Split up into datasets according to split ratio
             train_dataset_length = int(len(self.files) * self.split_ratio[0] / 100)
@@ -55,7 +60,8 @@ class DataHandler:
                 len(self.files) - train_dataset_length - val_dataset_length
             )
             train_dataset, val_dataset, test_dataset = random_split(
-                self.files, [train_dataset_length, val_dataset_length, test_dataset_length]
+                self.files,
+                [train_dataset_length, val_dataset_length, test_dataset_length],
             )
             self.train_dataset = IRNDataset(train_dataset, device=hparams["device"])
             self.val_dataset = IRNDataset(val_dataset, device=hparams["device"])
@@ -86,4 +92,4 @@ class DataHandler:
         )
 
     def get_state_dict(self, index):
-        return self.train_dataset.get_state_dict(index) 
+        return self.train_dataset.get_state_dict(index)

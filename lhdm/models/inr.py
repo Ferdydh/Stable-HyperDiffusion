@@ -3,7 +3,7 @@ from typing import Optional
 
 import torch
 import torch.nn.functional as F
-#from pyrff.layers import GaussianEncoding, PositionalEncoding
+from rff.layers import GaussianEncoding, PositionalEncoding
 from torch import nn
 
 
