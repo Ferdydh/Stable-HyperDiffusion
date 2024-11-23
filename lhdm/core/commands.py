@@ -2,10 +2,10 @@ import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 
 from core.utils import load_config, get_device, plot_image
+from core import cmd
 from models.inr import INR
 from models.autoencoder import Autoencoder
-from data.irn_dataset import DataHandler, DataSelector, DatasetType
-from core import cmd
+from data.inr_dataset import DataHandler, DataSelector, DatasetType
 
 
 @cmd.command()

@@ -37,7 +37,7 @@ class DataSelector:
     sample_id: Optional[int] = None
 
 
-class IRNDataset(Dataset):
+class INRDataset(Dataset):
     def __init__(self, files, device):
         self.files = files
         self.device = device
@@ -160,7 +160,7 @@ class DataHandler:
 
     def _create_single_split(self):
         """Create a single dataset for all splits (used with sample_limit)."""
-        self.train_dataset = self.val_dataset = self.test_dataset = IRNDataset(
+        self.train_dataset = self.val_dataset = self.test_dataset = INRDataset(
             self.files, device=self.hparams["device"]
         )
 
@@ -174,9 +174,9 @@ class DataHandler:
             self.files, [train_len, val_len, test_len]
         )
 
-        self.train_dataset = IRNDataset(train_files, device=self.hparams["device"])
-        self.val_dataset = IRNDataset(val_files, device=self.hparams["device"])
-        self.test_dataset = IRNDataset(test_files, device=self.hparams["device"])
+        self.train_dataset = INRDataset(train_files, device=self.hparams["device"])
+        self.val_dataset = INRDataset(val_files, device=self.hparams["device"])
+        self.test_dataset = INRDataset(test_files, device=self.hparams["device"])
 
     def train_dataloader(self):
         return DataLoader(

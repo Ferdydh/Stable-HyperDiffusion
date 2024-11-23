@@ -5,7 +5,7 @@ import yaml
 from pathlib import Path
 from typing import Dict, Any
 
-from inr import INR
+from models.inr import INR
 
 
 def load_config(experiment_name: str) -> Dict[str, Any]:
