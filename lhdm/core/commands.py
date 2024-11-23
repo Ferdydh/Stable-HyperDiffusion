@@ -6,104 +6,99 @@ import typer
 from pytorch_lightning.loggers import WandbLogger
 import matplotlib
 
+from core.utils import load_config, get_device
 from models.inr import INR
 from models.autoencoder import Autoencoder
-from data.irn_dataset import DataHandler
+from data.irn_dataset import DataHandler, DataSelector, DatasetType
 
-# To show the plot in a separate window
 matplotlib.use("TkAgg")
-
-wandb_logger = WandbLogger(log_model="all")
 
 cmd = typer.Typer(pretty_exceptions_show_locals=False)
 
 
-def plot_image(mlp_model):
-    # Generate a 28x28 grid of (x, y) inputs
+def plot_image(mlp_model: INR) -> None:
     resolution = 28
-    x = np.linspace(-1, 1, resolution)  # Normalize to range [-1, 1]
+    x = np.linspace(-1, 1, resolution)
     y = np.linspace(-1, 1, resolution)
     grid_x, grid_y = np.meshgrid(x, y)
 
-    # Flatten the grid into a list of (x, y) pairs
     inputs = np.stack([grid_x.ravel(), grid_y.ravel()], axis=-1)
-    # print(inputs)
     inputs_tensor = torch.tensor(inputs, dtype=torch.float32)
 
-    # Pass the inputs through the MLP
-    with torch.no_grad():  # Disable gradient calculation for inference
+    with torch.no_grad():
         outputs = mlp_model(inputs_tensor).numpy()
 
-    # Reshape the outputs into a 28x28 image
     image = outputs.reshape(resolution, resolution)
 
-    # Plot the image
     plt.imshow(image, cmap="gray", extent=(-1, 1, -1, 1))
     plt.colorbar(label="Grayscale Value")
     plt.title("Generated Grayscale Image")
     plt.xlabel("x")
     plt.ylabel("y")
 
-    plt.ion()  # Turn on interactive mode
+    plt.ion()
     plt.show(block=True)
-
-    # Should we save?
-    # plt.savefig("temp.png")
 
 
 @cmd.command()
-def visualize_mlp():
+def visualize_mlp(experiment: str = "autoencoder_sanity_check"):
+    """Visualize the MLK model output."""
+    cfg = load_config(experiment)
+    device = get_device()
     mlp = INR(up_scale=16)
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    hparams = {
-        "split_ratio": [80, 10, 10],
-        "device": device,
-        "batch_size": 8,
-        "num_workers": 4,
-        "sample_limit": 1,
-        "input_dim": 1185,
-        "output_dim": 1185,
-        "hidden_dim": 512,
-        "z_dim": 64,
-    }
-    datahandler = DataHandler(hparams, "data/mnist-inrs", "mnist_png_training_9")
+    data_handler = DataHandler(
+        hparams={**cfg["data"], "device": device},
+        data_folder=cfg["data"]["data_path"],
+        selectors=DataSelector(
+            dataset_type=DatasetType[cfg["data"]["dataset_type"]],
+            class_label=cfg["data"]["class_label"],
+            sample_id=cfg["data"]["sample_id"],
+        ),
+    )
 
-    state_dict = datahandler.get_state_dict(index=0)
-
+    state_dict = data_handler.get_state_dict(index=0)
     mlp.load_state_dict(state_dict)
-
     plot_image(mlp)
 
 
 @cmd.command()
-def train():
-    # TODO: accept config to run, for now just run the default
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    hparams = {
-        "split_ratio": [80, 10, 10],
-        "device": device,
-        "batch_size": 8,
-        "num_workers": 4,
-        "sample_limit": 1,
-    }
+def train(experiment: str = "autoencoder_sanity_check"):
+    """Train the autoencoder model."""
+    cfg = load_config(experiment)
+    device = get_device()
+    wandb_logger = WandbLogger(log_model="all")
 
     data_handler = DataHandler(
-        hparams, "data/mnist-inrs", "cifar10_png_train_airplane_"
+        hparams={**cfg["data"], "device": device},
+        data_folder=cfg["data"]["data_path"],
+        selectors=DataSelector(
+            dataset_type=DatasetType[cfg["data"]["dataset_type"]],
+            class_label=cfg["data"]["class_label"],
+            sample_id=cfg["data"]["sample_id"],
+        ),
     )
+
     train_loader = data_handler.train_dataloader()
     val_loader = data_handler.val_dataloader()
 
-    trainer = pl.Trainer(logger=wandb_logger, max_epochs=5)
+    trainer = pl.Trainer(
+        logger=wandb_logger,
+        max_epochs=cfg["trainer"]["max_epochs"],
+        accelerator="gpu" if torch.cuda.is_available() else "cpu",
+        devices=1,
+        precision=cfg["trainer"]["precision"],
+        log_every_n_steps=cfg["trainer"]["log_every_n_steps"],
+    )
 
-    ddconfig = {
-        "input_dim": 1185,
-        "output_dim": 1185,
-        "hidden_dim": 64,
-        "z_dim": 16,
-    }
-
-    model = Autoencoder(ddconfig=ddconfig, embed_dim=16)
+    model = Autoencoder(
+        ddconfig={
+            "input_dim": cfg["model"]["input_dim"],
+            "output_dim": cfg["model"]["output_dim"],
+            "hidden_dim": cfg["model"]["hidden_dim"],
+            "z_dim": cfg["model"]["z_dim"],
+        },
+        embed_dim=cfg["model"]["z_dim"],
+    )
 
     trainer.fit(model=model, train_dataloaders=train_loader, val_dataloaders=val_loader)
