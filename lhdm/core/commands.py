@@ -10,8 +10,8 @@ from models.inr import INR
 from models.autoencoder import Autoencoder
 from data.irn_dataset import DataHandler
 
-
-matplotlib.use("TkAgg")  # Option 1
+# To show the plot in a separate window
+matplotlib.use("TkAgg")
 
 wandb_logger = WandbLogger(log_model="all")
 
@@ -45,12 +45,10 @@ def plot_image(mlp_model):
     plt.ylabel("y")
 
     plt.ion()  # Turn on interactive mode
-
-    typer.echo(f"Matplotlib backend: {matplotlib.get_backend()}")
-    typer.echo(f"Interactive mode: {plt.isinteractive()}")
-
     plt.show(block=True)
-    plt.savefig("temp.png")
+
+    # Should we save?
+    # plt.savefig("temp.png")
 
 
 @cmd.command()
