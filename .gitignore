@@ -8,3 +8,4 @@ __pycache__
 .vscode
 lightning_logs
 wandb
+temp.png
