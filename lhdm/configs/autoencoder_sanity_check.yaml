@@ -1,0 +1,22 @@
+# configs/autoencoder_sanity_check.yaml
+data:
+  data_path: "lhdm/data/mnist-inrs"
+  dataset_type: "MNIST"
+  class_label: 2
+  sample_id: 1096
+  batch_size: 8
+  num_workers: 4
+  sample_limit: 1
+  split_ratio: [80, 10, 10]
+  pin_memory: true
+
+model:
+  input_dim: 1185
+  output_dim: 1185
+  hidden_dim: 1185
+  z_dim: 64
+
+trainer:
+  max_epochs: 5
+  precision: 32
+  log_every_n_steps: 50
