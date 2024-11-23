@@ -184,6 +184,7 @@ class DataHandler:
             batch_size=self.hparams["batch_size"],
             num_workers=self.hparams["num_workers"],
             shuffle=True,
+            persistent_workers=True,
         )
 
     def val_dataloader(self):
@@ -192,6 +193,7 @@ class DataHandler:
             batch_size=self.hparams["batch_size"],
             num_workers=self.hparams["num_workers"],
             shuffle=False,
+            persistent_workers=True,
         )
 
     def test_dataloader(self):
@@ -200,6 +202,7 @@ class DataHandler:
             batch_size=self.hparams["batch_size"],
             num_workers=self.hparams["num_workers"],
             shuffle=False,
+            persistent_workers=True,
         )
 
     def get_state_dict(self, index):
