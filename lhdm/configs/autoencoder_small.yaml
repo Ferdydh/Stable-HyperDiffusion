@@ -30,7 +30,7 @@ scheduler:
   eta_min: 1.0e-6
 
 trainer:
-  max_epochs: 10
+  max_epochs: 2000
   precision: 32
   gradient_clip_val: 1.0
   accumulate_grad_batches: 1
@@ -57,7 +57,7 @@ checkpoint:
 early_stopping:
   monitor: "val/loss" # Metric to monitor
   min_delta: 1.0e-5 # Minimum change to qualify as an improvement
-  patience: 50 # Number of epochs with no improvement after which training will be stopped
+  patience: 200 # Number of epochs with no improvement after which training will be stopped
   mode: "min" # "min" for metrics to minimize (like loss), "max" for metrics to maximize
   stopping_threshold: null # Optional: stop training if we reach this value
   divergence_threshold: null # Optional: stop training if we exceed this value
