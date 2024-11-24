@@ -1,6 +1,10 @@
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
+from pytorch_lightning.callbacks import (
+    ModelCheckpoint,
+    LearningRateMonitor,
+    EarlyStopping,
+)
 import wandb
 from datetime import datetime
 import atexit
@@ -54,12 +58,7 @@ def train(experiment: str = "autoencoder_sanity_check"):
         data_handler = DataHandler(
             hparams={**cfg["data"], "device": device},
             data_folder=cfg["data"]["data_path"],
-            selectors=create_selector_from_config(cfg),  # Use the helper function
-            # selectors=DataSelector(
-            #     dataset_type=DatasetType[cfg["data"]["dataset_type"]],
-            #     class_label=cfg["data"]["class_label"],
-            #     sample_id=cfg["data"]["sample_id"],
-            # ),
+            selectors=create_selector_from_config(cfg),
         )
 
         # Get dataloaders
@@ -83,6 +82,23 @@ def train(experiment: str = "autoencoder_sanity_check"):
         # Learning rate monitor
         lr_monitor = LearningRateMonitor(logging_interval="step")
         callbacks.append(lr_monitor)
+
+        # Early stopping callback
+        early_stopping = EarlyStopping(
+            monitor=cfg["early_stopping"]["monitor"],
+            min_delta=cfg["early_stopping"]["min_delta"],
+            patience=cfg["early_stopping"]["patience"],
+            verbose=True,
+            mode=cfg["early_stopping"]["mode"],
+            check_finite=True,  # Stop if loss becomes NaN or inf
+            stopping_threshold=cfg["early_stopping"].get(
+                "stopping_threshold", None
+            ),  # Optional absolute threshold
+            divergence_threshold=cfg["early_stopping"].get(
+                "divergence_threshold", None
+            ),  # Optional divergence threshold
+        )
+        callbacks.append(early_stopping)
 
         # Initialize trainer
         trainer = pl.Trainer(

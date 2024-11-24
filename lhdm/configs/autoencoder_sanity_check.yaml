@@ -53,3 +53,11 @@ checkpoint:
   mode: "min"
   save_last: true
   save_top_k: 3
+
+early_stopping:
+  monitor: "val/loss" # Metric to monitor
+  min_delta: 1.0e-4 # Minimum change to qualify as an improvement
+  patience: 50 # Number of epochs with no improvement after which training will be stopped
+  mode: "min" # "min" for metrics to minimize (like loss), "max" for metrics to maximize
+  stopping_threshold: null # Optional: stop training if we reach this value
+  divergence_threshold: null # Optional: stop training if we exceed this value

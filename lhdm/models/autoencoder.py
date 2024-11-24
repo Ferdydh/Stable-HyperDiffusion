@@ -203,7 +203,9 @@ class Autoencoder(pl.LightningModule):
                 reconstructions = self(batch)
 
             # Log visualizations for a subset of the batch
-            num_samples = min(4, batch.shape[0])  # Visualize up to 4 samples
+            num_samples = min(
+                self.config["logging"]["num_samples_to_visualize"], batch.shape[0]
+            )  # Visualize up to num_samples_to_visualize
             vis_dict = create_reconstruction_visualizations(
                 batch[:num_samples],
                 reconstructions[:num_samples],
