@@ -15,6 +15,16 @@ class DatasetType(Enum):
     MNIST = "mnist"
     CIFAR10 = "cifar10"
 
+    @classmethod
+    def from_str(cls, value: Optional[str]) -> Optional["DatasetType"]:
+        """Convert string to DatasetType, returning None if input is None."""
+        if value is None:
+            return None
+        try:
+            return cls[value.upper()]
+        except KeyError:
+            raise ValueError(f"Invalid dataset type: {value}")
+
 
 @dataclass
 class DataSelector:
@@ -22,6 +32,10 @@ class DataSelector:
     Flexible data selection criteria.
 
     Examples:
+        # Select all data (both MNIST and CIFAR10)
+        DataSelector(dataset_type=None)
+        DataSelector()
+
         # Select all MNIST
         DataSelector(dataset_type=DatasetType.MNIST)
 
@@ -32,9 +46,20 @@ class DataSelector:
         DataSelector(dataset_type=DatasetType.MNIST, class_label=1, sample_id=100)
     """
 
-    dataset_type: DatasetType
+    dataset_type: Optional[DatasetType]
     class_label: Optional[Union[int, str]] = None
     sample_id: Optional[int] = None
+
+
+def create_selector_from_config(cfg: Dict[str, Any]) -> DataSelector:
+    """Create a DataSelector from a configuration dictionary."""
+    data_config = cfg.get("data", {})
+
+    return DataSelector(
+        dataset_type=DatasetType.from_str(data_config.get("dataset_type")),
+        class_label=data_config.get("class_label"),
+        sample_id=data_config.get("sample_id"),
+    )
 
 
 class INRDataset(Dataset):
@@ -111,38 +136,28 @@ class DataHandler:
 
             # List all files in the data directory
             for f in os.listdir(self.data_path):
+                # If no dataset type specified, match both MNIST and CIFAR10
+                if selector.dataset_type is None:
+                    if not (f.startswith("mnist_png_") or f.startswith("cifar10_png_")):
+                        continue
                 # For MNIST: match mnist_png_(train|test)_digit_id pattern
-                if selector.dataset_type == DatasetType.MNIST:
-                    # If class label is specified, match only that digit
-                    if selector.class_label is not None:
-                        if (
-                            not f.startswith("mnist_png_")
-                            or f"_{selector.class_label}_" not in f
-                        ):
-                            continue
-                    else:
-                        if not f.startswith("mnist_png_"):
-                            continue
-
-                    # If sample_id is specified, match that specific ID
-                    if selector.sample_id is not None:
-                        if not f.endswith(f"_{selector.sample_id}"):
-                            continue
-
+                elif selector.dataset_type == DatasetType.MNIST:
+                    if not f.startswith("mnist_png_"):
+                        continue
                 # For CIFAR10: match cifar10_png_train_class_id pattern
                 elif selector.dataset_type == DatasetType.CIFAR10:
                     if not f.startswith("cifar10_png_train"):
                         continue
 
-                    # If class label is specified, match only that class
-                    if selector.class_label is not None:
-                        if f"_{selector.class_label}_" not in f:
-                            continue
+                # If class label is specified, match only that class/digit
+                if selector.class_label is not None:
+                    if f"_{selector.class_label}_" not in f:
+                        continue
 
-                    # If sample_id is specified, match that specific ID
-                    if selector.sample_id is not None:
-                        if not f.endswith(f"_{selector.sample_id}"):
-                            continue
+                # If sample_id is specified, match that specific ID
+                if selector.sample_id is not None:
+                    if not f.endswith(f"_{selector.sample_id}"):
+                        continue
 
                 # Add the full path to the model file
                 model_path = os.path.join(
@@ -219,50 +234,71 @@ class DataHandler:
 #         "split_ratio": [80, 10, 10],  # train/val/test split
 #     }
 
-#     # Example 1: Use all MNIST data
+#     # Example 1: Use all data (both MNIST and CIFAR10)
+#     cfg1 = {}  # Empty config
 #     handler1 = DataHandler(
 #         hparams,
 #         "data/folder",
-#         DataSelector(dataset_type=DatasetType.MNIST)
+#         create_selector_from_config(cfg1)
 #     )
 
-#     # Example 2: Use only MNIST class 1
+#     # Example 2: Use all MNIST data
+#     cfg2 = {"data": {"dataset_type": "mnist"}}
 #     handler2 = DataHandler(
 #         hparams,
 #         "data/folder",
-#         DataSelector(dataset_type=DatasetType.MNIST, class_label=1)
+#         create_selector_from_config(cfg2)
 #     )
 
-#     # Example 3: Use MNIST class 1 with specific ID
+#     # Example 3: Use only MNIST class 1
+#     cfg3 = {"data": {"dataset_type": "mnist", "class_label": 1}}
 #     handler3 = DataHandler(
 #         hparams,
 #         "data/folder",
-#         DataSelector(dataset_type=DatasetType.MNIST, class_label=1, sample_id=100)
+#         create_selector_from_config(cfg3)
 #     )
 
-#     # Example 4: Use CIFAR10 airplanes
+#     # Example 4: Use MNIST class 1 with specific ID
+#     cfg4 = {
+#         "data": {
+#             "dataset_type": "mnist",
+#             "class_label": 1,
+#             "sample_id": 100
+#         }
+#     }
 #     handler4 = DataHandler(
 #         hparams,
 #         "data/folder",
-#         DataSelector(dataset_type=DatasetType.CIFAR10, class_label="airplane")
+#         create_selector_from_config(cfg4)
 #     )
 
-#     # Example 5: Use both MNIST and CIFAR10
+#     # Example 5: Use CIFAR10 airplanes
+#     cfg5 = {
+#         "data": {
+#             "dataset_type": "cifar10",
+#             "class_label": "airplane"
+#         }
+#     }
 #     handler5 = DataHandler(
 #         hparams,
 #         "data/folder",
-#         [
-#             DataSelector(dataset_type=DatasetType.MNIST),
-#             DataSelector(dataset_type=DatasetType.CIFAR10)
-#         ]
+#         create_selector_from_config(cfg5)
 #     )
 
-#     # Example 6: Use specific combinations
+#     # Example 6: Explicitly use None dataset type (matches both MNIST and CIFAR10)
+#     cfg6 = {"data": {"dataset_type": None}}
 #     handler6 = DataHandler(
 #         hparams,
 #         "data/folder",
+#         create_selector_from_config(cfg6)
+#     )
+
+#     # Example 7: Multiple selectors
+#     handler7 = DataHandler(
+#         hparams,
+#         "data/folder",
 #         [
-#             DataSelector(dataset_type=DatasetType.MNIST, class_label=1),
-#             DataSelector(dataset_type=DatasetType.CIFAR10, class_label="airplane")
+#             create_selector_from_config({"data": {"dataset_type": "mnist", "class_label": 1}}),
+#             create_selector_from_config({"data": {"dataset_type": "cifar10", "class_label": "airplane"}})
 #         ]
 #     )

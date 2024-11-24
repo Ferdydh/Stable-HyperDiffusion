@@ -2,10 +2,10 @@ data:
   data_path: "lhdm/data/mnist-inrs"
   dataset_type: "MNIST"
   class_label: 2
-  sample_id: 1096
+  # sample_id: 1096
   batch_size: 32 # Increased batch size for better stability
   num_workers: 4
-  sample_limit: 1
+  sample_limit: 10
   split_ratio: [80, 10, 10]
   pin_memory: true
 
@@ -30,21 +30,21 @@ scheduler:
   eta_min: 1.0e-6
 
 trainer:
-  max_epochs: 100
+  max_epochs: 1000
   precision: 32
   gradient_clip_val: 1.0
   accumulate_grad_batches: 1
-  val_check_interval: 0.5 # Validate every 0.5 epochs
-  log_every_n_steps: 5
+  val_check_interval: 1 # Validate every 0.5 epochs
+  log_every_n_steps: 50
 
 logging:
   project_name: "inr-autoencoder"
   run_name: null # Will be auto-generated if not specified
-  log_model: false # Change to true to save model weights in wandb
+  log_model: false
   save_dir: "logs"
-  num_samples_to_visualize: 4 # Number of fixed samples to track
-  sample_every_n_epochs: 5 # How often to log sample reconstructions
-  log_every_n_steps: 1
+  num_samples_to_visualize: 3 # Number of fixed samples to track
+  sample_every_n_epochs: 50 # How often to log sample reconstructions
+  log_every_n_steps: 50
 
 checkpoint:
   dirpath: "checkpoints"

@@ -1,5 +1,3 @@
-# core/commands.py
-
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
@@ -9,7 +7,10 @@ import atexit
 
 from core.utils import load_config, get_device
 from models.autoencoder import Autoencoder
-from data.inr_dataset import DataHandler, DataSelector, DatasetType
+from data.inr_dataset import (
+    DataHandler,
+    create_selector_from_config,
+)
 
 
 def cleanup_wandb():
@@ -40,23 +41,25 @@ def train(experiment: str = "autoencoder_sanity_check"):
         wandb_logger = WandbLogger(
             project=cfg["logging"]["project_name"],
             name=cfg["logging"]["run_name"],
-            log_model=True,
+            log_model=cfg["logging"]["log_model"],
             save_dir=cfg["logging"]["save_dir"],
             settings=wandb.Settings(start_method="thread"),
         )
 
-        # Log hyperparameters
+        # Log hyperparameters and config file
         wandb_logger.log_hyperparams(cfg)
+        wandb.save(experiment)  # Save the original config file as an artifact
 
         # Initialize data handler
         data_handler = DataHandler(
             hparams={**cfg["data"], "device": device},
             data_folder=cfg["data"]["data_path"],
-            selectors=DataSelector(
-                dataset_type=DatasetType[cfg["data"]["dataset_type"]],
-                class_label=cfg["data"]["class_label"],
-                sample_id=cfg["data"]["sample_id"],
-            ),
+            selectors=create_selector_from_config(cfg),  # Use the helper function
+            # selectors=DataSelector(
+            #     dataset_type=DatasetType[cfg["data"]["dataset_type"]],
+            #     class_label=cfg["data"]["class_label"],
+            #     sample_id=cfg["data"]["sample_id"],
+            # ),
         )
 
         # Get dataloaders
