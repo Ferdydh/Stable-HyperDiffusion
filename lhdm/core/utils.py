@@ -19,25 +19,23 @@ def get_device() -> torch.device:
     return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-def plot_image(mlp_model: INR) -> None:
+def plot_image(
+    mlp_model: INR, device: torch.device
+) -> plt.Figure:  # Updated return type hint
     resolution = 28
     x = np.linspace(-1, 1, resolution)
     y = np.linspace(-1, 1, resolution)
     grid_x, grid_y = np.meshgrid(x, y)
 
     inputs = np.stack([grid_x.ravel(), grid_y.ravel()], axis=-1)
-    inputs_tensor = torch.tensor(inputs, dtype=torch.float32)
+    inputs_tensor = torch.tensor(inputs, dtype=torch.float32, device=device)
 
     with torch.no_grad():
-        outputs = mlp_model(inputs_tensor).numpy()
+        outputs = mlp_model(inputs_tensor).cpu().numpy()
 
     image = outputs.reshape(resolution, resolution)
 
-    plt.imshow(image, cmap="gray", extent=(-1, 1, -1, 1))
-    plt.colorbar(label="Grayscale Value")
-    plt.title("Generated Grayscale Image")
-    plt.xlabel("x")
-    plt.ylabel("y")
-
-    plt.ion()
-    plt.show(block=True)
+    fig, ax = plt.subplots()
+    ax.imshow(image, cmap="gray", extent=(-1, 1, -1, 1))
+    plt.axis("off")
+    return fig  # Returns the matplotlib Figure object

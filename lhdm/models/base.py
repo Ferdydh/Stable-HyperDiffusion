@@ -11,14 +11,14 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, z_dim)
-        self.dropout = nn.Dropout(0.1)
+        # self.dropout = nn.Dropout(0.1)
 
     @typechecked
     def forward(
         self, x: Float[Tensor, "batch input_dim"]
     ) -> Float[Tensor, "batch z_dim"]:
         x = F.relu(self.fc1(x))
-        x = self.dropout(x)
+        # x = self.dropout(x)
         z = self.fc2(x)
         return z
 
@@ -29,13 +29,13 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.fc1 = nn.Linear(z_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, output_dim)
-        self.dropout = nn.Dropout(0.1)
+        # self.dropout = nn.Dropout(0.1)
 
     @typechecked
     def forward(
         self, z: Float[Tensor, "batch z_dim"]
     ) -> Float[Tensor, "batch output_dim"]:
         z = F.relu(self.fc1(z))
-        z = self.dropout(z)
+        # z = self.dropout(z)
         x_reconstructed = self.fc2(z)
         return x_reconstructed
