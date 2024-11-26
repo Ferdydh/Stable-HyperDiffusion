@@ -80,35 +80,65 @@ def create_reconstruction_visualizations(
     return result_dict
 
 
+@typechecked
+def get_activation(activation_name: str) -> nn.Module:
+    """Helper function to map activation names to PyTorch functions."""
+    activations = {
+        "relu": nn.ReLU,
+        "sigmoid": nn.Sigmoid,
+        "tanh": nn.Tanh,
+        "leaky_relu": nn.LeakyReLU,
+        "elu": nn.ELU,
+        "gelu": nn.GELU,
+        "silu": nn.SiLU
+    }
+    return activations.get(activation_name.lower(), nn.ReLU)()
+
+@typechecked
+def get_loss_function(loss_name: str) -> nn.Module:
+    """Helper function to map loss names to PyTorch functions."""
+    loss = {
+        "mae": nn.L1Loss,
+        "mse": nn.MSELoss
+    }
+    return loss.get(loss_name.lower(), nn.L1Loss)()
+
+
 class Encoder(nn.Module):
     @typechecked
-    def __init__(self, input_dim: int, hidden_dim: int, z_dim: int, **kwargs):
+    def __init__(self, input_dim: int, hidden_dim: int, z_dim: int, activation: str = "relu", **kwargs):
         super(Encoder, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, z_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, z_dim)
+        self.activation_func = get_activation(activation)
 
     @typechecked
     def forward(
         self, x: Float[Tensor, "batch input_dim"]
     ) -> Float[Tensor, "batch z_dim"]:
-        x = F.relu(self.fc1(x))
-        z = self.fc2(x)
+        x = self.activation_func(self.fc1(x))
+        x = self.activation_func(self.fc2(x))
+        z = self.fc3(x)
         return z
 
 
 class Decoder(nn.Module):
     @typechecked
-    def __init__(self, z_dim: int, hidden_dim: int, output_dim: int, **kwargs):
+    def __init__(self, z_dim: int, hidden_dim: int, output_dim: int, activation: str = "relu", **kwargs):
         super(Decoder, self).__init__()
         self.fc1 = nn.Linear(z_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, output_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, output_dim)
+        self.activation_func = get_activation(activation)
 
     @typechecked
     def forward(
         self, z: Float[Tensor, "batch z_dim"]
     ) -> Float[Tensor, "batch output_dim"]:
-        z = F.relu(self.fc1(z))
-        x_reconstructed = self.fc2(z)
+        z = self.activation_func(self.fc1(z))
+        z = self.activation_func(self.fc2(z))
+        x_reconstructed = self.fc3(z)
         return x_reconstructed
 
 
@@ -131,6 +161,9 @@ class Autoencoder(pl.LightningModule):
         # Store optimizer and scheduler config
         self.optimizer_config = config["optimizer"]
         self.scheduler_config = config["scheduler"]
+
+        # Initialize loss function
+        self.loss_func = get_loss_function(config["model"]["loss"])
 
         # Initialize quality metrics
         self.best_val_loss = float("inf")
@@ -193,7 +226,7 @@ class Autoencoder(pl.LightningModule):
         reconstructions: Float[Tensor, "batch feature_dim"],
         prefix: str = "train",
     ) -> Tuple[Tensor, dict[str, Tensor]]:
-        recon_loss = F.mse_loss(reconstructions, inputs)
+        recon_loss = self.loss_func(reconstructions, inputs)
         return recon_loss, {f"{prefix}/loss": recon_loss}
 
     def visualize_batch(self, batch: Tensor, prefix: str, batch_idx: int):
@@ -268,10 +301,11 @@ class Autoencoder(pl.LightningModule):
                     total_norm += param_norm.item() ** 2
             total_norm = total_norm**0.5
             self.log("train/grad_norm", total_norm, prog_bar=False, sync_dist=True)
+            
+            # Visualize both fixed samples and current batch
+            self.visualize_reconstructions(self.fixed_train_samples, "train", batch_idx)
+            self.visualize_batch(batch, "train_batch", batch_idx)
 
-        # Visualize both fixed samples and current batch
-        self.visualize_reconstructions(self.fixed_train_samples, "train", batch_idx)
-        self.visualize_batch(batch, "train_batch", batch_idx)
 
         return loss
 
