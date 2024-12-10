@@ -5,12 +5,16 @@ from pytorch_lightning.callbacks import (
     LearningRateMonitor,
     EarlyStopping,
 )
+from torchinfo import summary
+import torch
+
 import wandb
 from datetime import datetime
 import atexit
 
 from core.utils import load_config, get_device
 from models.autoencoder import Autoencoder
+from models.vae import VariationalAE
 from data.inr_dataset import (
     DataHandler,
     create_selector_from_config,
@@ -118,7 +122,10 @@ def train(experiment: str = "autoencoder_sanity_check"):
         wandb.require("service")
 
         # Initialize model
+        #path = "checkpoints/last-v100.ckpt"
         model = Autoencoder(cfg)
+        #checkpoint = torch.load(path, map_location=torch.device('cpu'))
+        #model.load_state_dict(checkpoint["state_dict"])
 
         # Train model
         trainer.fit(

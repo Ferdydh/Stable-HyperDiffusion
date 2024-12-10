@@ -1,0 +1,64 @@
+data:
+  data_path: "lhdm/data/mnist-inrs"
+  dataset_type: "MNIST"
+  class_label: 2
+  #sample_id: 1096
+  batch_size: 128 # Increased batch size for better stability
+  num_workers: 4
+  sample_limit: 1024 # Amount of samples for training dataset
+  split_ratio: [80, 10, 10]
+  #pin_memory: true
+
+# Autoencoder settings
+model:
+  input_dim: 1185
+  output_dim: 1185
+  hidden_dim: 1024
+  z_dim: 256
+  activation: "relu" # Can be relu, gelu, silu
+  loss: "mse" # Can be mae, mse, 
+
+optimizer:
+  name: "adam"
+  lr: 2.0e-4 # Slightly lower learning rate for stability
+  betas: [0.9, 0.999] # Standard Adam betas
+  weight_decay: 1.0e-7
+  eps: 1.0e-8
+
+scheduler:
+  name: "cosine"
+  T_max: 1000 # Number of iterations for cosine cycle
+  eta_min: 1.0e-5
+
+trainer:
+  max_epochs: 5000
+  precision: 32
+  gradient_clip_val: 1
+  accumulate_grad_batches: 1
+  val_check_interval: 0.5 # Validate every 0.5 epochs
+  log_every_n_steps: 1
+
+logging:
+  project_name: "inr-autoencoder"
+  run_name: null # Will be auto-generated if not specified
+  log_model: false # Change to true to save model weights in wandb
+  save_dir: "logs"
+  num_samples_to_visualize: 4 # Number of fixed samples to track
+  sample_every_n_epochs: 1 # How often to log sample reconstructions
+  log_every_n_steps: 1
+
+checkpoint:
+  dirpath: "checkpoints"
+  filename: "autoencoder-{epoch:02d}-{val_loss:.3f}"
+  monitor: "val/loss"
+  mode: "min"
+  save_last: true
+  save_top_k: 3
+
+early_stopping:
+  monitor: "val/loss" # Metric to monitor
+  min_delta: 1.0e-7 # Minimum change to qualify as an improvement
+  patience: 10000 # Number of epochs with no improvement after which training will be stopped
+  mode: "min" # "min" for metrics to minimize (like loss), "max" for metrics to maximize
+  stopping_threshold: null # Optional: stop training if we reach this value
+  divergence_threshold: null # Optional: stop training if we exceed this value
