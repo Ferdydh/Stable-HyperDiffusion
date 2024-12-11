@@ -7,8 +7,8 @@ import wandb
 from typing import Dict, Any
 
 from core.utils import plot_image
-from models.autoencoder import load_weights_into_inr
 from models.inr import INR
+from models.utils import load_weights_into_inr
 
 from .gaussian_diffusion import (
     GaussianDiffusion,

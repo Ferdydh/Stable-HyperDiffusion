@@ -1,112 +1,32 @@
-from matplotlib import pyplot as plt
 import torch
 import pytorch_lightning as pl
-import wandb
 from torch import Tensor
 from typing import Tuple
-import torch.nn.functional as F
 from jaxtyping import Float
 from typeguard import typechecked
 import torch.nn as nn
-import numpy as np
 
 from models.inr import INR
+from models.utils import create_reconstruction_visualizations, get_activation
 
-
-def plot_image(
-    mlp_model: INR, device: torch.device
-) -> plt.Figure:  # Updated return type hint
-    resolution = 28
-    x = np.linspace(-1, 1, resolution)
-    y = np.linspace(-1, 1, resolution)
-    grid_x, grid_y = np.meshgrid(x, y)
-
-    inputs = np.stack([grid_x.ravel(), grid_y.ravel()], axis=-1)
-    inputs_tensor = torch.tensor(inputs, dtype=torch.float32, device=device)
-
-    with torch.no_grad():
-        outputs = mlp_model(inputs_tensor).cpu().numpy()
-
-    image = outputs.reshape(resolution, resolution)
-
-    fig, ax = plt.subplots()
-    ax.imshow(image, cmap="gray", extent=(-1, 1, -1, 1))
-    plt.axis("off")
-    return fig
-
-
-def load_weights_into_inr(weights: Tensor, inr_model: INR) -> INR:
-    """Helper function to load weights into INR model."""
-    state_dict = {}
-    start_idx = 0
-    for key, param in inr_model.state_dict().items():
-        param_size = param.numel()
-        param_data = weights[start_idx : start_idx + param_size].reshape(param.shape)
-        state_dict[key] = param_data
-        start_idx += param_size
-    inr_model.load_state_dict(state_dict)
-    return inr_model
-
-
-def create_reconstruction_visualizations(
-    originals: Tensor,
-    reconstructions: Tensor,
-    inr_model: INR,
-    prefix: str,
-    batch_idx: int,
-    global_step: int,
-    is_fixed: bool = False,
-) -> dict:
-    """Create visualization grid for original-reconstruction pairs."""
-    result_dict = {}
-
-    # Create visualizations for each pair
-    for i, (orig, recon) in enumerate(zip(originals, reconstructions)):
-        # Generate figures
-        original_fig = plot_image(load_weights_into_inr(orig, inr_model), orig.device)
-        recon_fig = plot_image(load_weights_into_inr(recon, inr_model), recon.device)
-
-        # Add to result dictionary with unique keys
-        sample_type = "fixed" if is_fixed else "batch"
-        result_dict[f"{prefix}/{sample_type}/original_{i}"] = wandb.Image(original_fig)
-        result_dict[f"{prefix}/{sample_type}/reconstruction_{i}"] = wandb.Image(
-            recon_fig
-        )
-
-        # Close figures
-        plt.close(original_fig)
-        plt.close(recon_fig)
-
-    return result_dict
-
-
-@typechecked
-def get_activation(activation_name: str) -> nn.Module:
-    """Helper function to map activation names to PyTorch functions."""
-    activations = {
-        "relu": nn.ReLU,
-        "sigmoid": nn.Sigmoid,
-        "tanh": nn.Tanh,
-        "leaky_relu": nn.LeakyReLU,
-        "elu": nn.ELU,
-        "gelu": nn.GELU,
-        "silu": nn.SiLU
-    }
-    return activations.get(activation_name.lower(), nn.ReLU)()
 
 @typechecked
 def get_loss_function(loss_name: str) -> nn.Module:
     """Helper function to map loss names to PyTorch functions."""
-    loss = {
-        "mae": nn.L1Loss,
-        "mse": nn.MSELoss
-    }
+    loss = {"mae": nn.L1Loss, "mse": nn.MSELoss}
     return loss.get(loss_name.lower(), nn.L1Loss)()
 
 
 class Encoder(nn.Module):
     @typechecked
-    def __init__(self, input_dim: int, hidden_dim: int, z_dim: int, activation: str = "relu", **kwargs):
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int,
+        z_dim: int,
+        activation: str = "relu",
+        **kwargs,
+    ):
         super(Encoder, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
@@ -125,7 +45,14 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     @typechecked
-    def __init__(self, z_dim: int, hidden_dim: int, output_dim: int, activation: str = "relu", **kwargs):
+    def __init__(
+        self,
+        z_dim: int,
+        hidden_dim: int,
+        output_dim: int,
+        activation: str = "relu",
+        **kwargs,
+    ):
         super(Decoder, self).__init__()
         self.fc1 = nn.Linear(z_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
@@ -301,11 +228,10 @@ class Autoencoder(pl.LightningModule):
                     total_norm += param_norm.item() ** 2
             total_norm = total_norm**0.5
             self.log("train/grad_norm", total_norm, prog_bar=False, sync_dist=True)
-            
+
             # Visualize both fixed samples and current batch
             self.visualize_reconstructions(self.fixed_train_samples, "train", batch_idx)
             self.visualize_batch(batch, "train_batch", batch_idx)
-
 
         return loss
 

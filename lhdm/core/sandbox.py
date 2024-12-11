@@ -10,7 +10,7 @@ from datetime import datetime
 import atexit
 
 from core.utils import load_config, get_device
-from models.autoencoder.pl_mlp import Autoencoder
+from models.autoencoder.pl_transformer import Autoencoder
 from data.inr_dataset import (
     DataHandler,
     create_selector_from_config,
@@ -25,7 +25,7 @@ def cleanup_wandb():
         pass
 
 
-def train(experiment: str = "autoencoder_sanity_check"):
+def test(experiment: str = "autoencoder_sanity_check"):
     """Train the autoencoder model with improved logging and visualization."""
     # Register cleanup function
     atexit.register(cleanup_wandb)
@@ -59,6 +59,7 @@ def train(experiment: str = "autoencoder_sanity_check"):
             hparams={**cfg["data"], "device": device},
             data_folder=cfg["data"]["data_path"],
             selectors=create_selector_from_config(cfg),
+            not_flat=True,
         )
 
         # Get dataloaders

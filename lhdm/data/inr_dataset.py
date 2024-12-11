@@ -63,13 +63,19 @@ def create_selector_from_config(cfg: Dict[str, Any]) -> DataSelector:
 
 
 class INRDataset(Dataset):
-    def __init__(self, files, device):
+    def __init__(self, files, device, not_flat=False):
         self.files = files
         self.device = device
+
+        self.not_flat = not_flat
 
     def __getitem__(self, index):
         file_path = self.files[index]
         state_dict = torch.load(file_path, map_location=self.device, weights_only=True)
+
+        if self.not_flat:
+            return state_dict
+
         weights = []
         for weight in state_dict.values():
             weights.append(weight.flatten())
@@ -90,7 +96,7 @@ class DataHandler:
         hparams: Dict[str, Any],
         data_folder: str,
         selectors: Union[DataSelector, List[DataSelector]],
-        extract: bool = False,
+        not_flat: bool = False,
     ):
         """
         Initialize DataHandler with flexible data selection.
@@ -104,6 +110,7 @@ class DataHandler:
         self.hparams = hparams
         self.split_ratio = hparams.get("split_ratio", [80, 10, 10])
         self.data_path = data_folder
+        self.not_flat = not_flat
 
         # Convert single selector to list
         if isinstance(selectors, DataSelector):
@@ -189,9 +196,15 @@ class DataHandler:
             self.files, [train_len, val_len, test_len]
         )
 
-        self.train_dataset = INRDataset(train_files, device=self.hparams["device"])
-        self.val_dataset = INRDataset(val_files, device=self.hparams["device"])
-        self.test_dataset = INRDataset(test_files, device=self.hparams["device"])
+        self.train_dataset = INRDataset(
+            train_files, device=self.hparams["device"], not_flat=self.not_flat
+        )
+        self.val_dataset = INRDataset(
+            val_files, device=self.hparams["device"], not_flat=self.not_flat
+        )
+        self.test_dataset = INRDataset(
+            test_files, device=self.hparams["device"], not_flat=self.not_flat
+        )
 
     def train_dataloader(self):
         return DataLoader(
