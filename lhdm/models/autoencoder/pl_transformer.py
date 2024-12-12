@@ -85,7 +85,7 @@ class PositionEmbs(nn.Module):
         assert (
             pos.shape[1] == inputs.shape[1]
         ), "Position tensors should have the same seq length as inputs"
-        pos = pos.int()
+
         pos_emb1 = self.pe1(pos[:, :, 0])
         pos_emb2 = self.pe2(pos[:, :, 1])
         if self.pe3 is not None:
@@ -103,24 +103,19 @@ class PositionEmbs(nn.Module):
 class Encoder(nn.Module):
     @typechecked
     def __init__(
-        self,
-        input_dim: int,
-        hidden_dim: int,
-        z_dim: int,
-        activation: str = "relu",
-        **kwargs,
+        self, hparams: dict,
     ):
         super(Encoder, self).__init__()
 
         # TODO!!!
-        max_positions = [100, 10, 40]
-        num_layers = 8
-        d_model = 1024
-        dropout = 0.0
-        windowsize = 32
-        nhead = 8
-        i_dim = 33
-        lat_dim = 128
+        max_positions = hparams.get("max_positions", [48, 256])
+        num_layers = hparams.get("num_layers", 8)
+        d_model = hparams.get("d_model", 128)
+        dropout = hparams.get("dropout", 0.0)
+        windowsize = hparams.get("windowsize", 48)
+        nhead = hparams.get("nhead", 8)
+        i_dim = hparams.get("i_dim", 33)
+        lat_dim = hparams.get("lat_dim", 128)
 
         self.tokenizer = nn.Linear(i_dim, d_model)
 
@@ -160,24 +155,19 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     @typechecked
     def __init__(
-        self,
-        z_dim: int,
-        hidden_dim: int,
-        output_dim: int,
-        activation: str = "relu",
-        **kwargs,
+        self, hparams: dict,
     ):
         super(Decoder, self).__init__()
 
         # TODO: put in dictionary
-        max_positions = [100, 10, 40]
-        d_model = 1024
-        num_layers = 8
-        nhead = 8
-        windowsize = 32
-        dropout = 0.0
-        lat_dim = 128
-        i_dim = 33
+        max_positions = hparams.get("max_positions", [48, 256])
+        num_layers = hparams.get("num_layers", 8)
+        d_model = hparams.get("d_model", 128)
+        dropout = hparams.get("dropout", 0.0)
+        windowsize = hparams.get("windowsize", 48)
+        nhead = hparams.get("nhead", 8)
+        i_dim = hparams.get("i_dim", 33)
+        lat_dim = hparams.get("lat_dim", 128)
 
         self.decoder_comp = nn.Linear(lat_dim, d_model)
         self.pe = PositionEmbs(max_positions=max_positions, embedding_dim=d_model)
@@ -211,8 +201,8 @@ class Autoencoder(pl.LightningModule):
         self.config = config
 
         # Initialize encoder and decoder
-        self.encoder = Encoder(**config["model"])
-        self.decoder = Decoder(**config["model"])
+        self.encoder = Encoder(config["model"])
+        self.decoder = Decoder(config["model"])
 
         # Initialize fixed validation and training samples
         self.fixed_val_samples: list[Tensor] | None = None
@@ -232,9 +222,9 @@ class Autoencoder(pl.LightningModule):
         self.demo_inr = self.demo_inr.to(self.device)
 
         # TODO: put in dictionary
-        lat_dim = 128
-        windowsize = 32
-        odim=30
+        lat_dim = config["model"].get("lat_dim", 128)
+        windowsize = config["model"].get("windowsize", 48)
+        odim=config["model"].get("i_dim", 30)
 
         self.projection_head = SimpleProjectionHead(
             d_model=lat_dim, n_tokens=windowsize, odim=odim
