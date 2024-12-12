@@ -90,6 +90,17 @@ class INRDataset(Dataset):
         return len(self.files)
 
 
+def collate_state_dicts_as_list(batch):
+    """
+    Custom collate function to return a batch as a list of state_dicts.
+    Args:
+        batch (list): A list of state_dicts from the Dataset.
+    Returns:
+        list: The batch as a list of state_dicts.
+    """
+    return batch
+
+
 class DataHandler:
     def __init__(
         self,
@@ -133,6 +144,7 @@ class DataHandler:
             self._create_single_split()
         else:
             self._create_train_val_test_split()
+        print(len(self.train_dataset))
 
     def _get_files_from_selectors(self, selectors: List[DataSelector]) -> List[str]:
         """Get all files matching the given selectors."""
@@ -183,7 +195,7 @@ class DataHandler:
     def _create_single_split(self):
         """Create a single dataset for all splits (used with sample_limit)."""
         self.train_dataset = self.val_dataset = self.test_dataset = INRDataset(
-            self.files, device=self.hparams["device"]
+            self.files, device=self.hparams["device"], not_flat=self.not_flat
         )
 
     def _create_train_val_test_split(self):
@@ -213,6 +225,7 @@ class DataHandler:
             num_workers=self.hparams["num_workers"],
             shuffle=True,
             persistent_workers=True,
+            collate_fn=collate_state_dicts_as_list
         )
 
     def val_dataloader(self):
@@ -222,6 +235,7 @@ class DataHandler:
             num_workers=self.hparams["num_workers"],
             shuffle=False,
             persistent_workers=True,
+            collate_fn=collate_state_dicts_as_list
         )
 
     def test_dataloader(self):
@@ -231,6 +245,7 @@ class DataHandler:
             num_workers=self.hparams["num_workers"],
             shuffle=False,
             persistent_workers=True,
+            collate_fn=collate_state_dicts_as_list
         )
 
     def get_state_dict(self, index):

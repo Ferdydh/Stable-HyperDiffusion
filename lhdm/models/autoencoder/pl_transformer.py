@@ -8,10 +8,9 @@ import torch.nn as nn
 
 from data.utils import weights_to_tokens
 from models.autoencoder.losses import GammaContrastReconLoss
-from models.autoencoder.pl_mlp import get_loss_function
 from models.autoencoder.transformer import Transformer
 from models.inr import INR
-from models.utils import create_reconstruction_visualizations, get_activation
+from models.utils import create_reconstruction_visualizations
 
 
 class SimpleProjectionHead(nn.Module):
@@ -86,7 +85,7 @@ class PositionEmbs(nn.Module):
         assert (
             pos.shape[1] == inputs.shape[1]
         ), "Position tensors should have the same seq length as inputs"
-
+        pos = pos.int()
         pos_emb1 = self.pe1(pos[:, :, 0])
         pos_emb2 = self.pe2(pos[:, :, 1])
         if self.pe3 is not None:
@@ -112,17 +111,20 @@ class Encoder(nn.Module):
         **kwargs,
     ):
         super(Encoder, self).__init__()
-        self.tokenizer = nn.Linear(input_dim, hidden_dim)
 
         # TODO!!!
-        max_positions = [48, 256]
+        max_positions = [100, 10, 40]
         num_layers = 8
         d_model = 1024
         dropout = 0.0
-        windowsize = 64
+        windowsize = 32
         nhead = 8
+        i_dim = 33
+        lat_dim = 128
 
-        self.pe = PositionEmbs(max_positions=max_positions, embedding_dim=hidden_dim)
+        self.tokenizer = nn.Linear(i_dim, d_model)
+
+        self.pe = PositionEmbs(max_positions=max_positions, embedding_dim=d_model)
 
         # TODO set this
         self.transformer = Transformer(
@@ -134,15 +136,15 @@ class Encoder(nn.Module):
             causal=False,
             block_size=windowsize,
         )
-        self.encoder_comp = nn.Linear(hidden_dim, z_dim)
+        self.encoder_comp = nn.Linear(d_model, lat_dim)
 
     @typechecked
     def forward(
         self,
-        x: Float[Tensor, "batch input_dim"],
+        x,
         p,
         mask,
-    ) -> Float[Tensor, "batch z_dim"]:
+    ) -> Tensor:
         # map weight tokens from input dim to d_model
         x = self.tokenizer(x)
         # add position embeddings
@@ -168,14 +170,17 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
 
         # TODO: put in dictionary
+        max_positions = [100, 10, 40]
         d_model = 1024
         num_layers = 8
         nhead = 8
-        windowsize = 64
+        windowsize = 32
         dropout = 0.0
+        lat_dim = 128
+        i_dim = 33
 
-        self.decoder_comp = nn.Linear(z_dim, hidden_dim)
-        self.pe = PositionEmbs(max_positions=[48, 256], embedding_dim=hidden_dim)
+        self.decoder_comp = nn.Linear(lat_dim, d_model)
+        self.pe = PositionEmbs(max_positions=max_positions, embedding_dim=d_model)
         self.transformer = Transformer(
             n_layer=num_layers,
             n_head=nhead,
@@ -185,12 +190,12 @@ class Decoder(nn.Module):
             causal=False,
             block_size=windowsize,
         )
-        self.detokenizer = nn.Linear(hidden_dim, output_dim)
+        self.detokenizer = nn.Linear(d_model, i_dim)
 
     @typechecked
     def forward(
-        self, z: Float[Tensor, "batch z_dim"], p, mask
-    ) -> Float[Tensor, "batch output_dim"]:
+        self, z, p, mask
+    ) -> Tensor:
         x = self.decoder_comp(z)
         x = self.pe(x, p)
         x = self.transformer(x, mask=mask)
@@ -228,10 +233,11 @@ class Autoencoder(pl.LightningModule):
 
         # TODO: put in dictionary
         lat_dim = 128
-        windowsize = 64
+        windowsize = 32
+        odim=30
 
         self.projection_head = SimpleProjectionHead(
-            d_model=lat_dim, n_tokens=windowsize, odim=30
+            d_model=lat_dim, n_tokens=windowsize, odim=odim
         )
 
         self.criterion = GammaContrastReconLoss(
@@ -274,14 +280,14 @@ class Autoencoder(pl.LightningModule):
 
     @typechecked
     def encode(
-        self, x: Float[Tensor, "batch feature_dim"], p: torch.tensor, mask=None
+        self, x, p: torch.tensor, mask=None
     ) -> Tensor:
         return self.encoder(x, p, mask)
 
     @typechecked
     def decode(
         self, z: Tensor, p: Tensor, mask=None
-    ) -> Float[Tensor, "batch feature_dim"]:
+    ) -> Tensor:
         return self.decoder(
             z,
             p,
@@ -290,8 +296,8 @@ class Autoencoder(pl.LightningModule):
 
     @typechecked
     def forward(
-        self, input: Float[Tensor, "batch feature_dim"], p, mask
-    ) -> Tuple[Tensor, Tensor, Float[Tensor, "batch feature_dim"]]:
+        self, input, p, mask
+    ) -> Tuple[Tensor, Tensor, Tensor]:
         z = self.encode(input, p, mask)
         zp = self.projection_head(z)
         dec = self.decode(z)
@@ -299,8 +305,8 @@ class Autoencoder(pl.LightningModule):
 
     def compute_loss(
         self,
-        inputs: Float[Tensor, "batch feature_dim"],
-        reconstructions: Float[Tensor, "batch feature_dim"],
+        inputs,
+        reconstructions,
         masks,
         positions,
         prefix: str = "train",
@@ -360,15 +366,19 @@ class Autoencoder(pl.LightningModule):
             vis_dict["global_step"] = self.global_step
             self.logger.experiment.log(vis_dict)
 
-    @typechecked
+
     def training_step(self, batch, batch_idx: int) -> Tensor:
         # Convert batch to tensors all at once instead of loop
-        tokens, masks, positions = zip(*[weights_to_tokens(b) for b in batch])
+        tokens, masks, positions = zip(*[weights_to_tokens(b, tokensize=0, device=self.device) for b in batch])
 
         # Stack the tensors along batch dimension
-        tokens = torch.stack(tokens)
-        masks = torch.stack(masks)
-        positions = torch.stack(positions)
+        tokens = torch.stack(tokens).to(self.device)
+        masks = torch.stack(masks).to(self.device)
+        positions = torch.stack(positions).to(self.device)
+
+        print(f"tokens shape: {tokens.shape}")
+        print(f"masks shape: {masks.shape}")
+        print(f"positions shape: {positions.shape}")
 
         # Forward pass
         z, reconstructions, zp = self.forward(tokens, positions, masks)
@@ -396,11 +406,22 @@ class Autoencoder(pl.LightningModule):
 
         return loss
 
-    @typechecked
-    def validation_step(
-        self, batch: Float[Tensor, "batch feature_dim"], batch_idx: int
-    ) -> dict[str, Tensor]:
-        reconstructions = self.forward(batch)
+    def validation_step(self, batch, batch_idx: int) -> dict[str, Tensor]:
+        # Convert batch to tensors all at once instead of loop
+        tokens, masks, positions = zip(*[weights_to_tokens(b, tokensize=0, device=self.device) for b in batch])
+
+        # Stack the tensors along batch dimension
+        tokens = torch.stack(tokens).to(self.device)
+        masks = torch.stack(masks).to(self.device)
+        positions = torch.stack(positions).to(self.device)
+
+        print(f"tokens shape: {tokens.shape}")
+        print(f"masks shape: {masks.shape}")
+        print(f"positions shape: {positions.shape}")
+        print(tokens)
+
+        # Forward pass
+        z, reconstructions, zp = self.forward(tokens, positions, masks)
         val_loss, val_log_dict = self.compute_loss(batch, reconstructions, prefix="val")
 
         # Log validation metrics

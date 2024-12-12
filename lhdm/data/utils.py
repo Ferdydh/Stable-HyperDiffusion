@@ -4,7 +4,7 @@ import torch
 
 
 def weights_to_tokens(
-    checkpoint, tokensize: int, return_mask: bool = True, ignore_bn=False
+    checkpoint, tokensize: int, return_mask: bool = True, ignore_bn=False, device=None
 ):
     """
     transforms a checkpoint into a sequence of tokens, one token per channel / neuron
@@ -47,6 +47,7 @@ def weights_to_tokens(
             else:
                 continue
             tempsize = torch.prod(torch.tensor(tmp)) / tmp[0]  # noqa: F821
+            print(tempsize)
             # cat biases to channels if they exist in checkpoint
             if key.replace("weight", "bias") in checkpoint:
                 tempsize += 1
@@ -69,6 +70,7 @@ def weights_to_tokens(
 
     # get raw tokens and positions
     tokensize = int(tokensize)
+    print("tokensize: ", tokensize)
 
     #### Get Tokens ####################################################
     idx = 0
@@ -129,6 +131,9 @@ def weights_to_tokens(
             mask = mask.view(-1, tokensize).to(torch.bool)
 
             # extend out with new tokens, zero's (and only entry) is a list
+            if device:
+                w = w.to(device)
+                mask = mask.to(device)
             tokens.append(w)
             masks.append(mask)
 
@@ -148,7 +153,8 @@ def weights_to_tokens(
         pos = pos.to(torch.int)
     else:
         pos = pos.to(torch.int16)
-
+    if device:
+        pos.to(device)
     if return_mask:
         return tokens, masks, pos
     else:
