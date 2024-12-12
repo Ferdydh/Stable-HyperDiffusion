@@ -18,6 +18,7 @@ model:
   windowsize: 32
   nhead: 8
   i_dim: 33
+  n_tokens: 65
   lat_dim: 128
   odim: 30
 

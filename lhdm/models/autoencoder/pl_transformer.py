@@ -146,8 +146,10 @@ class Encoder(nn.Module):
         x = self.pe(x, p)
         # pass through encoder transformer
         x = self.transformer(x, mask=mask)
+        print(x.shape)
         # compress to latent dim
         z = self.encoder_comp(x)
+        print(z.shape)
 
         return z
 
@@ -222,12 +224,12 @@ class Autoencoder(pl.LightningModule):
         self.demo_inr = self.demo_inr.to(self.device)
 
         # TODO: put in dictionary
-        lat_dim = config["model"].get("lat_dim", 128)
-        windowsize = config["model"].get("windowsize", 48)
-        odim=config["model"].get("i_dim", 30)
+        d_model = config["model"].get("d_model", 128)
+        n_tokens = config["model"].get("n_tokens", 48)
+        lat_dim=config["model"].get("lat_dim", 30)
 
         self.projection_head = SimpleProjectionHead(
-            d_model=lat_dim, n_tokens=windowsize, odim=odim
+            d_model=lat_dim, n_tokens=n_tokens, odim=lat_dim
         )
 
         self.criterion = GammaContrastReconLoss(
@@ -290,7 +292,7 @@ class Autoencoder(pl.LightningModule):
     ) -> Tuple[Tensor, Tensor, Tensor]:
         z = self.encode(input, p, mask)
         zp = self.projection_head(z)
-        dec = self.decode(z)
+        dec = self.decode(z, p, mask)
         return z, dec, zp
 
     def compute_loss(
