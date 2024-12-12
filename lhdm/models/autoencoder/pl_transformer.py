@@ -85,7 +85,7 @@ class PositionEmbs(nn.Module):
         assert (
             pos.shape[1] == inputs.shape[1]
         ), "Position tensors should have the same seq length as inputs"
-
+        pos = pos.int()
         pos_emb1 = self.pe1(pos[:, :, 0])
         pos_emb2 = self.pe2(pos[:, :, 1])
         if self.pe3 is not None:
