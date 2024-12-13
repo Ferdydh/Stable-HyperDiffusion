@@ -65,3 +65,11 @@ def get_activation(activation_name: str) -> nn.Module:
         "silu": nn.SiLU,
     }
     return activations.get(activation_name.lower(), nn.ReLU)()
+
+
+
+@typechecked
+def get_loss_function(loss_name: str) -> nn.Module:
+    """Helper function to map loss names to PyTorch functions."""
+    loss = {"mae": nn.L1Loss, "mse": nn.MSELoss}
+    return loss.get(loss_name.lower(), nn.L1Loss)()

@@ -5,6 +5,7 @@ from typing import Tuple
 from jaxtyping import Float
 from typeguard import typechecked
 import torch.nn as nn
+import math
 
 from data.utils import weights_to_tokens
 from models.autoencoder.losses import GammaContrastReconLoss
@@ -85,7 +86,7 @@ class PositionEmbs(nn.Module):
         assert (
             pos.shape[1] == inputs.shape[1]
         ), "Position tensors should have the same seq length as inputs"
-        pos = pos.int()
+
         pos_emb1 = self.pe1(pos[:, :, 0])
         pos_emb2 = self.pe2(pos[:, :, 1])
         if self.pe3 is not None:
@@ -195,6 +196,14 @@ class Decoder(nn.Module):
         return x_reconstructed
 
 
+def transform(tokens, masks, positions):
+    """
+    Apply augmentations to the input data.
+    """
+
+    return tokens, masks, positions, tokens, masks, positions
+
+
 class Autoencoder(pl.LightningModule):
     @typechecked
     def __init__(self, config: dict):
@@ -224,9 +233,9 @@ class Autoencoder(pl.LightningModule):
         self.demo_inr = self.demo_inr.to(self.device)
 
         # TODO: put in dictionary
-        d_model = config["model"].get("d_model", 128)
-        n_tokens = config["model"].get("n_tokens", 48)
-        lat_dim=config["model"].get("lat_dim", 30)
+        num_layers = config["model"].get("num_layers", 8)
+        n_tokens = config["model"].get("n_tokens", 65)
+        lat_dim=config["model"].get("lat_dim", 128)
 
         self.projection_head = SimpleProjectionHead(
             d_model=lat_dim, n_tokens=n_tokens, odim=lat_dim
@@ -235,40 +244,29 @@ class Autoencoder(pl.LightningModule):
         self.criterion = GammaContrastReconLoss(
             gamma=config.get("training::gamma", 0.5),
             reduction=config.get("training::reduction", "mean"),
-            batch_size=config.get("trainset::batchsize", 64),
+            batch_size=config.get("data::batchsize", 64),
             temperature=config.get("training::temperature", 0.1),
             contrast=config.get("training::contrast", "simclr"),
             z_var_penalty=config.get("training::z_var_penalty", 0.0),
         )
 
-    def setup(self, stage: str | None = None):
-        """Setup fixed validation and training samples for tracking reconstruction progress."""
-        if stage == "fit":
-            try:
-                num_samples = self.config["logging"]["num_samples_to_visualize"]
+        self.apply(self._init_weights)
+        for pn, p in self.named_parameters():
+            if pn.endswith("c_proj.weight"):
+                torch.nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * num_layers))
 
-                # Setup validation samples
-                if (
-                    hasattr(self.trainer, "val_dataloaders")
-                    and self.trainer.val_dataloaders is not None
-                    and self.fixed_val_samples is None
-                ):
-                    val_batch = next(iter(self.trainer.val_dataloaders[0]))
-                    self.fixed_val_samples = val_batch[:num_samples].clone()
+        # TODO: fill in transformations
+        self.transform = transform
+        
 
-                # Setup training samples
-                if (
-                    hasattr(self.trainer, "train_dataloader")
-                    and self.trainer.train_dataloader is not None
-                    and self.fixed_train_samples is None
-                ):
-                    train_batch = next(iter(self.trainer.train_dataloader()))
-                    self.fixed_train_samples = train_batch[:num_samples].clone()
 
-            except Exception as e:
-                print(f"Warning: Could not setup fixed samples: {e}")
-                self.fixed_val_samples = None
-                self.fixed_train_samples = None
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     @typechecked
     def encode(
@@ -288,23 +286,39 @@ class Autoencoder(pl.LightningModule):
 
     @typechecked
     def forward(
-        self, input, p, mask
+        self, input, p, mask=None
     ) -> Tuple[Tensor, Tensor, Tensor]:
         z = self.encode(input, p, mask)
         zp = self.projection_head(z)
         dec = self.decode(z, p, mask)
         return z, dec, zp
+    
+    def forward_embeddings(self, x: torch.tensor, p: torch.tensor) -> torch.tensor:
+        """
+        Args:
+            x: torch.tensor sequence of weight/channel tokens
+            p: torch.tensor sequence of positions
+        Returns:
+            z: torch.tensor sequence of latent representations
+        """
+        x = self.encode(x, p)
+        # x = self.model.projection_head(x)
+        # x = x.view(x.shape[0], -1)  # flatten
+        x = torch.mean(x, dim=1)  # average
+        return x
 
-    def compute_loss(
-        self,
-        inputs,
-        reconstructions,
-        masks,
-        positions,
-        prefix: str = "train",
-    ) -> Tuple[Tensor, dict[str, Tensor]]:
-        recon_loss = self.loss_func(reconstructions, inputs)
+
+    def compute_loss(self, t_i, t_j, x_i, x_j, m_i, m_j, prefix: str = "train") -> Tuple[Tensor, dict[str, Tensor]]:
+        latent_embedding_i, recon_i, projected_lat_i = t_i
+        latent_embedding_j, recon_j, projected_lat_j = t_j
+
+        x = torch.cat([x_i, x_j], dim=0)
+        recon = torch.cat([recon_i, recon_j], dim=0)
+        m = torch.cat([m_i, m_j], dim=0)
+
+        recon_loss = self.criterion(z_i = projected_lat_i, z_j=projected_lat_j, y=recon, t=x, m=m)
         return recon_loss, {f"{prefix}/loss": recon_loss}
+    
 
     def visualize_batch(self, batch: Tensor, prefix: str, batch_idx: int):
         """Visualize a batch of samples during training or validation."""
@@ -366,35 +380,36 @@ class Autoencoder(pl.LightningModule):
         # Stack the tensors along batch dimension
         tokens = torch.stack(tokens).to(self.device)
         masks = torch.stack(masks).to(self.device)
-        positions = torch.stack(positions).to(self.device)
+        positions = torch.stack(positions).to(self.device).to(torch.int32)
 
         print(f"tokens shape: {tokens.shape}")
         print(f"masks shape: {masks.shape}")
         print(f"positions shape: {positions.shape}")
 
+        tokens_i, masks_i, positions_i,  tokens_j, masks_j, positions_j = self.transform(tokens, masks, positions)
+
         # Forward pass
-        z, reconstructions, zp = self.forward(tokens, positions, masks)
+        t_i = self.forward(tokens_i, positions_i)
+        t_j = self.forward(tokens_j, positions_j)
 
-        # TODO: continue
-
-        loss, log_dict = self.compute_loss(batch, reconstructions, prefix="train")
+        loss, log_dict = self.compute_loss(t_i, t_j, tokens_i, tokens_j, masks_i, masks_j, prefix="train")
 
         # Logging
-        self.log_dict(log_dict, prog_bar=True, sync_dist=True)
+        #self.log_dict(log_dict, prog_bar=True, sync_dist=True)
 
         # Log gradient norm
-        if batch_idx % self.config["trainer"]["log_every_n_steps"] == 0:
-            total_norm = 0.0
-            for p in self.parameters():
-                if p.grad is not None:
-                    param_norm = p.grad.data.norm(2)
-                    total_norm += param_norm.item() ** 2
-            total_norm = total_norm**0.5
-            self.log("train/grad_norm", total_norm, prog_bar=False, sync_dist=True)
+        #if batch_idx % self.config["trainer"]["log_every_n_steps"] == 0:
+        #    total_norm = 0.0
+        #    for p in self.parameters():
+         #       if p.grad is not None:
+        #            param_norm = p.grad.data.norm(2)
+         #           total_norm += param_norm.item() ** 2
+        #    total_norm = total_norm**0.5
+        #   self.log("train/grad_norm", total_norm, prog_bar=False, sync_dist=True)
 
             # Visualize both fixed samples and current batch
-            self.visualize_reconstructions(self.fixed_train_samples, "train", batch_idx)
-            self.visualize_batch(batch, "train_batch", batch_idx)
+         #   self.visualize_reconstructions(self.fixed_train_samples, "train", batch_idx)
+         #  self.visualize_batch(batch, "train_batch", batch_idx)
 
         return loss
 
@@ -405,40 +420,54 @@ class Autoencoder(pl.LightningModule):
         # Stack the tensors along batch dimension
         tokens = torch.stack(tokens).to(self.device)
         masks = torch.stack(masks).to(self.device)
-        positions = torch.stack(positions).to(self.device)
+        positions = torch.stack(positions).to(self.device).to(torch.int32)
 
+        print("batch shape: ", len(batch))
         print(f"tokens shape: {tokens.shape}")
         print(f"masks shape: {masks.shape}")
         print(f"positions shape: {positions.shape}")
-        print(tokens)
+        print(type(positions), positions.dtype)
+
+        tokens_i, masks_i, positions_i,  tokens_j, masks_j, positions_j = self.transform(tokens, masks, positions)
 
         # Forward pass
-        z, reconstructions, zp = self.forward(tokens, positions, masks)
-        val_loss, val_log_dict = self.compute_loss(batch, reconstructions, prefix="val")
+        t_i = self.forward(tokens_i, positions_i)
+        t_j = self.forward(tokens_j, positions_j)
+
+        val_loss, val_log_dict = self.compute_loss(t_i, t_j, tokens_i, tokens_j, masks_i, masks_j, prefix="val")
 
         # Log validation metrics
-        self.log_dict(val_log_dict, prog_bar=True, sync_dist=True)
+        #self.log_dict(val_log_dict, prog_bar=True, sync_dist=True)
 
         # Visualize both fixed samples and current batch
-        if (
-            batch_idx == 0
-            and self.current_epoch % self.config["logging"]["sample_every_n_epochs"]
-            == 0
-        ):
-            self.visualize_reconstructions(self.fixed_val_samples, "val", batch_idx)
-            self.visualize_batch(batch, "val_batch", batch_idx)
+        #if (
+        #    batch_idx == 0
+        #    and self.current_epoch % self.config["logging"]["sample_every_n_epochs"]
+        #    == 0
+        #):
+        #    self.visualize_reconstructions(self.fixed_val_samples, "val", batch_idx)
+        #    self.visualize_batch(batch, "val_batch", batch_idx)
 
         return val_log_dict
 
     def configure_optimizers(self):
         # Configure optimizer
-        optimizer = torch.optim.Adam(
-            self.parameters(),
-            lr=self.optimizer_config["lr"],
-            betas=tuple(self.optimizer_config["betas"]),
-            eps=self.optimizer_config["eps"],
-            weight_decay=self.optimizer_config["weight_decay"],
-        )
+        if self.optimizer_config["name"] == "adam":
+            optimizer = torch.optim.Adam(
+                self.parameters(),
+                lr=self.optimizer_config["lr"],
+                betas=tuple(self.optimizer_config["betas"]),
+                eps=self.optimizer_config["eps"],
+                weight_decay=self.optimizer_config["weight_decay"],
+            )
+        elif self.optimizer_config["name"] == "adamw":
+            optimizer = torch.optim.AdamW(
+                self.parameters(),
+                lr=self.optimizer_config["lr"],
+                betas=tuple(self.optimizer_config["betas"]),
+                eps=self.optimizer_config["eps"],
+                weight_decay=self.optimizer_config["weight_decay"],
+            )
 
         # Configure scheduler
         if self.scheduler_config["name"] == "cosine":
@@ -446,6 +475,25 @@ class Autoencoder(pl.LightningModule):
                 optimizer,
                 T_max=self.scheduler_config["T_max"],
                 eta_min=self.scheduler_config["eta_min"],
+            )
+        elif self.scheduler_config["name"] == "OneCycleLR":
+            total_steps = (
+                self.config.get("trainer::max_epochs", 2000)
+            )
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                max_lr=self.optimizer_config["lr"],
+                total_steps=total_steps,
+                pct_start=0.3,
+                anneal_strategy="cos",
+                cycle_momentum=True,
+                base_momentum=0.85,
+                max_momentum=0.95,
+                div_factor=25.0,
+                final_div_factor=10000.0,
+                three_phase=False,
+                last_epoch=-1,
+                verbose=False,
             )
         else:
             return optimizer

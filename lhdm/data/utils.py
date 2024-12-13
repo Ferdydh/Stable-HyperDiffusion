@@ -144,7 +144,7 @@ def weights_to_tokens(
 
     # add index tensor over whole sequence
     pos = [(ndx, idx, jdx) for ndx, (idx, jdx) in enumerate(pos)]
-    pos = torch.tensor(pos)
+    pos = torch.tensor(pos, dtype=torch.int32)
     # cast tensor to int16
     if pos.max() > 32767:
         logging.debug(

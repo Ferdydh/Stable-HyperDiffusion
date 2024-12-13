@@ -22,20 +22,27 @@ model:
   lat_dim: 128
   odim: 30
 
+training:
+  gamma: 0.05
+  reduction: "mean"
+  temperature: 0.1
+  contrast: "simclr"
+  z_var_penalty: 0.0
+
 optimizer:
-  name: "adam"
+  name: "adamw"
   lr: 1.0e-4 # Slightly lower learning rate for stability
   betas: [0.9, 0.999] # Standard Adam betas
-  weight_decay: 1.0e-5
+  weight_decay: 3.0e-9
   eps: 1.0e-8
 
 scheduler:
-  name: "cosine"
-  T_max: 1000 # Number of iterations for cosine cycle
-  eta_min: 1.0e-6
+  name: "OneCycleLR"
+  #T_max: 1000 # Number of iterations for cosine cycle
+  #eta_min: 1.0e-6
 
 trainer:
-  max_epochs: 2000
+  max_epochs: 5
   precision: 32
   gradient_clip_val: 1.0
   accumulate_grad_batches: 1
