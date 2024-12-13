@@ -109,6 +109,9 @@ class NT_Xent(nn.Module):
         sim_i_j = torch.diag(sim, self.batch_size)
         sim_j_i = torch.diag(sim, -self.batch_size)
 
+        # print("sim_i_j shape:", sim_i_j.shape)
+        # print("sim_j_i shape:", sim_j_i.shape)
+
         # We have 2N samples,resulting in: 2xNx1
         positive_samples = torch.cat((sim_i_j, sim_j_i), dim=0).reshape(N, 1)
         # negative samples are singled out with the mask
@@ -293,4 +296,4 @@ class GammaContrastReconLoss(nn.Module):
         # if self.z_norm_penalty > 0:
         out["loss/loss"] = out["loss/loss"] + self.z_norm_penalty * z_norm
 
-        return out
+        return out["loss/loss"]

@@ -4,7 +4,7 @@ from core.train import train as train_autoencoder
 from core.visualize import visualize
 from core.sandbox import test
 
-app = typer.Typer(pretty_exceptions_show_locals=False)
+app = typer.Typer(pretty_exceptions_show_locals=False, pretty_exceptions_enable=False)
 app.command()(train_autoencoder)
 app.command()(core.train_diffusion.train_diffusion)
 app.command()(visualize)

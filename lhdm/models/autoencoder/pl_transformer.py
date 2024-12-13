@@ -1,17 +1,20 @@
+import copy
+from omegaconf import DictConfig, OmegaConf
 import torch
 import pytorch_lightning as pl
 from torch import Tensor
 from typing import Tuple
-from jaxtyping import Float
 from typeguard import typechecked
 import torch.nn as nn
 import math
 
-from data.utils import weights_to_tokens
+from data.utils import tokens_to_weights, weights_to_tokens
 from models.autoencoder.losses import GammaContrastReconLoss
 from models.autoencoder.transformer import Transformer
 from models.inr import INR
-from models.utils import create_reconstruction_visualizations
+from models.utils import (
+    create_reconstruction_visualizations_with_state_dict as create_reconstruction_visualizations,
+)
 
 
 class SimpleProjectionHead(nn.Module):
@@ -102,9 +105,9 @@ class PositionEmbs(nn.Module):
 
 
 class Encoder(nn.Module):
-    @typechecked
     def __init__(
-        self, hparams: dict,
+        self,
+        hparams: DictConfig,
     ):
         super(Encoder, self).__init__()
 
@@ -147,18 +150,16 @@ class Encoder(nn.Module):
         x = self.pe(x, p)
         # pass through encoder transformer
         x = self.transformer(x, mask=mask)
-        print(x.shape)
         # compress to latent dim
         z = self.encoder_comp(x)
-        print(z.shape)
 
         return z
 
 
 class Decoder(nn.Module):
-    @typechecked
     def __init__(
-        self, hparams: dict,
+        self,
+        hparams: DictConfig,
     ):
         super(Decoder, self).__init__()
 
@@ -186,9 +187,7 @@ class Decoder(nn.Module):
         self.detokenizer = nn.Linear(d_model, i_dim)
 
     @typechecked
-    def forward(
-        self, z, p, mask
-    ) -> Tensor:
+    def forward(self, z, p, mask) -> Tensor:
         x = self.decoder_comp(z)
         x = self.pe(x, p)
         x = self.transformer(x, mask=mask)
@@ -206,10 +205,31 @@ def transform(tokens, masks, positions):
 
 class Autoencoder(pl.LightningModule):
     @typechecked
-    def __init__(self, config: dict):
+    def __init__(self, config: DictConfig):
         super().__init__()
         self.save_hyperparameters(config)
         self.config = config
+
+        default_config = OmegaConf.create(
+            {
+                # "data": {"batch_size": 32},
+                "model": {
+                    "max_positions": [100, 10, 40],
+                    "num_layers": 8,
+                    "d_model": 1024,
+                    "dropout": 0.0,
+                    "windowsize": 32,
+                    "nhead": 8,
+                    "i_dim": 33,
+                    "n_tokens": 65,
+                    "lat_dim": 128,
+                    "odim": 30,
+                },
+            }
+        )
+
+        # This is a way to set multiple default values
+        self.config = OmegaConf.merge(default_config, config)
 
         # Initialize encoder and decoder
         self.encoder = Encoder(config["model"])
@@ -235,19 +255,19 @@ class Autoencoder(pl.LightningModule):
         # TODO: put in dictionary
         num_layers = config["model"].get("num_layers", 8)
         n_tokens = config["model"].get("n_tokens", 65)
-        lat_dim=config["model"].get("lat_dim", 128)
+        lat_dim = config["model"].get("lat_dim", 128)
 
         self.projection_head = SimpleProjectionHead(
             d_model=lat_dim, n_tokens=n_tokens, odim=lat_dim
         )
 
         self.criterion = GammaContrastReconLoss(
-            gamma=config.get("training::gamma", 0.5),
-            reduction=config.get("training::reduction", "mean"),
-            batch_size=config.get("data::batchsize", 64),
-            temperature=config.get("training::temperature", 0.1),
-            contrast=config.get("training::contrast", "simclr"),
-            z_var_penalty=config.get("training::z_var_penalty", 0.0),
+            gamma=config["training"].get("gamma", 0.5),
+            reduction=config["training"].get("reduction", "mean"),
+            batch_size=config["data"].get("batch_size", 64),
+            temperature=config["training"].get("temperature", 0.1),
+            contrast=config["training"].get("contrast", "simclr"),
+            z_var_penalty=config["training"].get("z_var_penalty", 0.0),
         )
 
         self.apply(self._init_weights)
@@ -257,8 +277,6 @@ class Autoencoder(pl.LightningModule):
 
         # TODO: fill in transformations
         self.transform = transform
-        
-
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
@@ -269,15 +287,11 @@ class Autoencoder(pl.LightningModule):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     @typechecked
-    def encode(
-        self, x, p: torch.tensor, mask=None
-    ) -> Tensor:
+    def encode(self, x, p: torch.tensor, mask=None) -> Tensor:
         return self.encoder(x, p, mask)
 
     @typechecked
-    def decode(
-        self, z: Tensor, p: Tensor, mask=None
-    ) -> Tensor:
+    def decode(self, z: Tensor, p: Tensor, mask=None) -> Tensor:
         return self.decoder(
             z,
             p,
@@ -285,30 +299,37 @@ class Autoencoder(pl.LightningModule):
         )
 
     @typechecked
-    def forward(
-        self, input, p, mask=None
-    ) -> Tuple[Tensor, Tensor, Tensor]:
+    def forward(self, input, p, mask=None) -> Tuple[Tensor, Tensor, Tensor]:
         z = self.encode(input, p, mask)
         zp = self.projection_head(z)
         dec = self.decode(z, p, mask)
         return z, dec, zp
-    
-    def forward_embeddings(self, x: torch.tensor, p: torch.tensor) -> torch.tensor:
-        """
-        Args:
-            x: torch.tensor sequence of weight/channel tokens
-            p: torch.tensor sequence of positions
-        Returns:
-            z: torch.tensor sequence of latent representations
-        """
-        x = self.encode(x, p)
-        # x = self.model.projection_head(x)
-        # x = x.view(x.shape[0], -1)  # flatten
-        x = torch.mean(x, dim=1)  # average
-        return x
 
+    # def forward_embeddings(self, x: torch.tensor, p: torch.tensor) -> torch.tensor:
+    #     """
+    #     Args:
+    #         x: torch.tensor sequence of weight/channel tokens
+    #         p: torch.tensor sequence of positions
+    #     Returns:
+    #         z: torch.tensor sequence of latent representations
+    #     """
+    #     x = self.encode(x, p)
+    #     # x = self.model.projection_head(x)
+    #     # x = x.view(x.shape[0], -1)  # flatten
+    #     x = torch.mean(x, dim=1)  # average
+    #     return x
 
-    def compute_loss(self, t_i, t_j, x_i, x_j, m_i, m_j, prefix: str = "train") -> Tuple[Tensor, dict[str, Tensor]]:
+    def on_train_start(self):
+        """Setup fixed validation and training samples for tracking reconstruction progress."""
+        num_samples = self.config["logging"]["num_samples_to_visualize"]
+        val_batch = next(iter(self.trainer.val_dataloaders))
+        self.fixed_val_samples = copy.deepcopy(val_batch[:num_samples])
+        train_batch = next(iter(self.trainer.train_dataloader))
+        self.fixed_train_samples = copy.deepcopy(train_batch[:num_samples])
+
+    def compute_loss(
+        self, t_i, t_j, x_i, x_j, m_i, m_j, prefix: str = "train"
+    ) -> Tuple[Tensor, dict[str, Tensor]]:
         latent_embedding_i, recon_i, projected_lat_i = t_i
         latent_embedding_j, recon_j, projected_lat_j = t_j
 
@@ -316,42 +337,36 @@ class Autoencoder(pl.LightningModule):
         recon = torch.cat([recon_i, recon_j], dim=0)
         m = torch.cat([m_i, m_j], dim=0)
 
-        recon_loss = self.criterion(z_i = projected_lat_i, z_j=projected_lat_j, y=recon, t=x, m=m)
+        recon_loss = self.criterion(
+            z_i=projected_lat_i, z_j=projected_lat_j, y=recon, t=x, m=m
+        )
         return recon_loss, {f"{prefix}/loss": recon_loss}
-    
-
-    def visualize_batch(self, batch: Tensor, prefix: str, batch_idx: int):
-        """Visualize a batch of samples during training or validation."""
-        if batch_idx % self.config["logging"]["log_every_n_steps"] == 0:
-            with torch.no_grad():
-                reconstructions = self(batch)
-
-            # Log visualizations for a subset of the batch
-            num_samples = min(
-                self.config["logging"]["num_samples_to_visualize"], batch.shape[0]
-            )  # Visualize up to num_samples_to_visualize
-            vis_dict = create_reconstruction_visualizations(
-                batch[:num_samples],
-                reconstructions[:num_samples],
-                self.demo_inr,
-                prefix,
-                batch_idx,
-                self.global_step,
-                is_fixed=False,
-            )
-
-            # Add step to wandb log
-            vis_dict["global_step"] = self.global_step
-            self.logger.experiment.log(vis_dict)
 
     def visualize_reconstructions(self, samples: Tensor, prefix: str, batch_idx: int):
         """Helper method to visualize fixed sample reconstructions during training or validation."""
+
         if (
             samples is not None
             and batch_idx % self.config["logging"]["log_every_n_steps"] == 0
         ):
             with torch.no_grad():
-                reconstructions = self(samples)
+                tokens, masks, positions = zip(
+                    *[
+                        weights_to_tokens(b, tokensize=0, device=self.device)
+                        for b in samples
+                    ]
+                )
+
+                # Stack the tensors along batch dimension
+                tokens = torch.stack(tokens).to(self.device)
+                masks = torch.stack(masks).to(self.device)
+                positions = torch.stack(positions).to(self.device).to(torch.int32)
+
+                reconstructed_tokens = self.forward(tokens, positions)
+            reconstructions = [
+                tokens_to_weights(t, p, samples[0])
+                for t, p in zip(reconstructed_tokens, positions)
+            ]
 
             # Store reconstructions for this step
             step_key = f"{prefix}_step_{self.global_step}"
@@ -367,86 +382,102 @@ class Autoencoder(pl.LightningModule):
                 self.global_step,
                 is_fixed=True,
             )
-
             # Add step to wandb log
             vis_dict["global_step"] = self.global_step
             self.logger.experiment.log(vis_dict)
 
-
     def training_step(self, batch, batch_idx: int) -> Tensor:
         # Convert batch to tensors all at once instead of loop
-        tokens, masks, positions = zip(*[weights_to_tokens(b, tokensize=0, device=self.device) for b in batch])
+        tokens, masks, positions = zip(
+            *[weights_to_tokens(b, tokensize=0, device=self.device) for b in batch]
+        )
 
         # Stack the tensors along batch dimension
         tokens = torch.stack(tokens).to(self.device)
         masks = torch.stack(masks).to(self.device)
         positions = torch.stack(positions).to(self.device).to(torch.int32)
 
-        print(f"tokens shape: {tokens.shape}")
-        print(f"masks shape: {masks.shape}")
-        print(f"positions shape: {positions.shape}")
-
-        tokens_i, masks_i, positions_i,  tokens_j, masks_j, positions_j = self.transform(tokens, masks, positions)
+        tokens_i, masks_i, positions_i, tokens_j, masks_j, positions_j = self.transform(
+            tokens, masks, positions
+        )
 
         # Forward pass
         t_i = self.forward(tokens_i, positions_i)
         t_j = self.forward(tokens_j, positions_j)
 
-        loss, log_dict = self.compute_loss(t_i, t_j, tokens_i, tokens_j, masks_i, masks_j, prefix="train")
+        loss, log_dict = self.compute_loss(
+            t_i, t_j, tokens_i, tokens_j, masks_i, masks_j, prefix="train"
+        )
 
         # Logging
-        #self.log_dict(log_dict, prog_bar=True, sync_dist=True)
+        self.log_dict(
+            log_dict,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=self.config["data"]["batch_size"],
+        )
 
         # Log gradient norm
-        #if batch_idx % self.config["trainer"]["log_every_n_steps"] == 0:
-        #    total_norm = 0.0
-        #    for p in self.parameters():
-         #       if p.grad is not None:
-        #            param_norm = p.grad.data.norm(2)
-         #           total_norm += param_norm.item() ** 2
-        #    total_norm = total_norm**0.5
-        #   self.log("train/grad_norm", total_norm, prog_bar=False, sync_dist=True)
+        if batch_idx % self.config["trainer"]["log_every_n_steps"] == 0:
+            total_norm = 0.0
+            for p in self.parameters():
+                if p.grad is not None:
+                    param_norm = p.grad.data.norm(2)
+                    total_norm += param_norm.item() ** 2
+            total_norm = total_norm**0.5
+            self.log(
+                "train/grad_norm",
+                total_norm,
+                prog_bar=False,
+                sync_dist=True,
+                batch_size=self.config["data"]["batch_size"],
+            )
 
-            # Visualize both fixed samples and current batch
-         #   self.visualize_reconstructions(self.fixed_train_samples, "train", batch_idx)
-         #  self.visualize_batch(batch, "train_batch", batch_idx)
+        # Visualize both fixed samples and current batch
+        self.visualize_reconstructions(self.fixed_train_samples, "train", batch_idx)
+        # self.visualize_batch(batch, "train_batch", batch_idx)
 
         return loss
 
     def validation_step(self, batch, batch_idx: int) -> dict[str, Tensor]:
         # Convert batch to tensors all at once instead of loop
-        tokens, masks, positions = zip(*[weights_to_tokens(b, tokensize=0, device=self.device) for b in batch])
+        tokens, masks, positions = zip(
+            *[weights_to_tokens(b, tokensize=0, device=self.device) for b in batch]
+        )
 
         # Stack the tensors along batch dimension
         tokens = torch.stack(tokens).to(self.device)
         masks = torch.stack(masks).to(self.device)
         positions = torch.stack(positions).to(self.device).to(torch.int32)
 
-        print("batch shape: ", len(batch))
-        print(f"tokens shape: {tokens.shape}")
-        print(f"masks shape: {masks.shape}")
-        print(f"positions shape: {positions.shape}")
-        print(type(positions), positions.dtype)
-
-        tokens_i, masks_i, positions_i,  tokens_j, masks_j, positions_j = self.transform(tokens, masks, positions)
+        tokens_i, masks_i, positions_i, tokens_j, masks_j, positions_j = self.transform(
+            tokens, masks, positions
+        )
 
         # Forward pass
         t_i = self.forward(tokens_i, positions_i)
         t_j = self.forward(tokens_j, positions_j)
 
-        val_loss, val_log_dict = self.compute_loss(t_i, t_j, tokens_i, tokens_j, masks_i, masks_j, prefix="val")
+        val_loss, val_log_dict = self.compute_loss(
+            t_i, t_j, tokens_i, tokens_j, masks_i, masks_j, prefix="val"
+        )
 
         # Log validation metrics
-        #self.log_dict(val_log_dict, prog_bar=True, sync_dist=True)
+        self.log_dict(val_log_dict, prog_bar=True, sync_dist=True)
 
         # Visualize both fixed samples and current batch
-        #if (
-        #    batch_idx == 0
-        #    and self.current_epoch % self.config["logging"]["sample_every_n_epochs"]
-        #    == 0
-        #):
-        #    self.visualize_reconstructions(self.fixed_val_samples, "val", batch_idx)
-        #    self.visualize_batch(batch, "val_batch", batch_idx)
+        if (
+            batch_idx == 0
+            and self.current_epoch % self.config["logging"]["sample_every_n_epochs"]
+            == 0
+        ):
+            # reconstructed_weights = [
+            #     tokens_to_weights(t, p, reference_checkpoint=b)
+            #     for t, p, b in zip(tokens, positions, batch)
+            # ]
+
+            self.visualize_reconstructions(self.fixed_val_samples, "val", batch_idx)
+            # self.visualize_batch(batch, "val_batch", batch_idx)
 
         return val_log_dict
 
@@ -477,9 +508,7 @@ class Autoencoder(pl.LightningModule):
                 eta_min=self.scheduler_config["eta_min"],
             )
         elif self.scheduler_config["name"] == "OneCycleLR":
-            total_steps = (
-                self.config.get("trainer::max_epochs", 2000)
-            )
+            total_steps = self.config["trainer"].get("max_epochs", 2000)
             scheduler = torch.optim.lr_scheduler.OneCycleLR(
                 optimizer,
                 max_lr=self.optimizer_config["lr"],

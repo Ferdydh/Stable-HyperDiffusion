@@ -25,7 +25,7 @@ def cleanup_wandb():
         pass
 
 
-def train(experiment: str = "autoencoder_sanity_check"):
+def train(experiment: str = "autoencoder_small"):
     """Train the autoencoder model with improved logging and visualization."""
     # Register cleanup function
     atexit.register(cleanup_wandb)

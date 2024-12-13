@@ -10,13 +10,6 @@ from models.inr import INR
 from models.utils import create_reconstruction_visualizations, get_activation
 
 
-@typechecked
-def get_loss_function(loss_name: str) -> nn.Module:
-    """Helper function to map loss names to PyTorch functions."""
-    loss = {"mae": nn.L1Loss, "mse": nn.MSELoss}
-    return loss.get(loss_name.lower(), nn.L1Loss)()
-
-
 class Encoder(nn.Module):
     @typechecked
     def __init__(
@@ -70,7 +63,6 @@ class Decoder(nn.Module):
 
 
 class Autoencoder(pl.LightningModule):
-    @typechecked
     def __init__(self, config: dict):
         super().__init__()
         self.save_hyperparameters(config)
@@ -90,7 +82,7 @@ class Autoencoder(pl.LightningModule):
         self.scheduler_config = config["scheduler"]
 
         # Initialize loss function
-        self.loss_func = get_loss_function(config["model"]["loss"])
+        self.loss_func = nn.MSELoss()
 
         # Initialize quality metrics
         self.best_val_loss = float("inf")
@@ -129,7 +121,9 @@ class Autoencoder(pl.LightningModule):
                 self.fixed_val_samples = None
                 self.fixed_train_samples = None
 
-    @typechecked
+        print(self.fixed_val_samples)
+        print(self.fixed_train_samples)
+
     def encode(self, x: Float[Tensor, "batch feature_dim"]) -> Tensor:
         return self.encoder(x)
 

@@ -25,7 +25,7 @@ def cleanup_wandb():
         pass
 
 
-def test(experiment: str = "autoencoder_sanity_check"):
+def test(experiment: str = "autoencoder_ferdy"):
     """Train the autoencoder model with improved logging and visualization."""
     # Register cleanup function
     atexit.register(cleanup_wandb)
@@ -84,22 +84,22 @@ def test(experiment: str = "autoencoder_sanity_check"):
         lr_monitor = LearningRateMonitor(logging_interval="step")
         callbacks.append(lr_monitor)
 
-        # Early stopping callback
-        early_stopping = EarlyStopping(
-            monitor=cfg["early_stopping"]["monitor"],
-            min_delta=cfg["early_stopping"]["min_delta"],
-            patience=cfg["early_stopping"]["patience"],
-            verbose=True,
-            mode=cfg["early_stopping"]["mode"],
-            check_finite=True,  # Stop if loss becomes NaN or inf
-            stopping_threshold=cfg["early_stopping"].get(
-                "stopping_threshold", None
-            ),  # Optional absolute threshold
-            divergence_threshold=cfg["early_stopping"].get(
-                "divergence_threshold", None
-            ),  # Optional divergence threshold
-        )
-        callbacks.append(early_stopping)
+        # # Early stopping callback
+        # early_stopping = EarlyStopping(
+        #     monitor=cfg["early_stopping"]["monitor"],
+        #     min_delta=cfg["early_stopping"]["min_delta"],
+        #     patience=cfg["early_stopping"]["patience"],
+        #     verbose=True,
+        #     mode=cfg["early_stopping"]["mode"],
+        #     check_finite=True,  # Stop if loss becomes NaN or inf
+        #     stopping_threshold=cfg["early_stopping"].get(
+        #         "stopping_threshold", None
+        #     ),  # Optional absolute threshold
+        #     divergence_threshold=cfg["early_stopping"].get(
+        #         "divergence_threshold", None
+        #     ),  # Optional divergence threshold
+        # )
+        # callbacks.append(early_stopping)
 
         # Initialize trainer
         trainer = pl.Trainer(

@@ -47,7 +47,6 @@ def weights_to_tokens(
             else:
                 continue
             tempsize = torch.prod(torch.tensor(tmp)) / tmp[0]  # noqa: F821
-            print(tempsize)
             # cat biases to channels if they exist in checkpoint
             if key.replace("weight", "bias") in checkpoint:
                 tempsize += 1
@@ -70,7 +69,6 @@ def weights_to_tokens(
 
     # get raw tokens and positions
     tokensize = int(tokensize)
-    print("tokensize: ", tokensize)
 
     #### Get Tokens ####################################################
     idx = 0

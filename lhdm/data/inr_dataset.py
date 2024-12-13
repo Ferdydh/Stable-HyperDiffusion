@@ -225,7 +225,8 @@ class DataHandler:
             num_workers=self.hparams["num_workers"],
             shuffle=True,
             persistent_workers=True,
-            collate_fn=collate_state_dicts_as_list
+            collate_fn=collate_state_dicts_as_list,
+            drop_last=True,
         )
 
     def val_dataloader(self):
@@ -235,7 +236,8 @@ class DataHandler:
             num_workers=self.hparams["num_workers"],
             shuffle=False,
             persistent_workers=True,
-            collate_fn=collate_state_dicts_as_list
+            collate_fn=collate_state_dicts_as_list,
+            drop_last=True,
         )
 
     def test_dataloader(self):
@@ -245,7 +247,8 @@ class DataHandler:
             num_workers=self.hparams["num_workers"],
             shuffle=False,
             persistent_workers=True,
-            collate_fn=collate_state_dicts_as_list
+            collate_fn=collate_state_dicts_as_list,
+            drop_last=True,
         )
 
     def get_state_dict(self, index):

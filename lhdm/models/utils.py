@@ -3,7 +3,7 @@ from torch import Tensor
 import torch.nn as nn
 from typeguard import typechecked
 import wandb
-from core.utils import plot_image
+from core.utils import plot_image, get_device
 from models.inr import INR
 
 
@@ -18,6 +18,45 @@ def load_weights_into_inr(weights: Tensor, inr_model: INR) -> INR:
         start_idx += param_size
     inr_model.load_state_dict(state_dict)
     return inr_model
+
+
+device = get_device()
+
+
+def create_reconstruction_visualizations_with_state_dict(
+    originals,
+    reconstructions,
+    inr_model: INR,
+    prefix: str,
+    batch_idx: int,
+    global_step: int,
+    is_fixed: bool = False,
+) -> dict:
+    """Create visualization grid for original-reconstruction pairs."""
+    result_dict = {}
+
+    # Create visualizations for each pair
+    for i, (orig, recon) in enumerate(zip(originals, reconstructions)):
+        # Generate figures
+        inr_model.load_state_dict(orig)
+        inr_model.to(device)
+        original_fig = plot_image(inr_model, device)
+        inr_model.load_state_dict(recon)
+        inr_model.to(device)
+        recon_fig = plot_image(inr_model, device)
+
+        # Add to result dictionary with unique keys
+        sample_type = "fixed" if is_fixed else "batch"
+        result_dict[f"{prefix}/{sample_type}/original_{i}"] = wandb.Image(original_fig)
+        result_dict[f"{prefix}/{sample_type}/reconstruction_{i}"] = wandb.Image(
+            recon_fig
+        )
+
+        # Close figures
+        plt.close(original_fig)
+        plt.close(recon_fig)
+
+    return result_dict
 
 
 def create_reconstruction_visualizations(
@@ -65,11 +104,3 @@ def get_activation(activation_name: str) -> nn.Module:
         "silu": nn.SiLU,
     }
     return activations.get(activation_name.lower(), nn.ReLU)()
-
-
-
-@typechecked
-def get_loss_function(loss_name: str) -> nn.Module:
-    """Helper function to map loss names to PyTorch functions."""
-    loss = {"mae": nn.L1Loss, "mse": nn.MSELoss}
-    return loss.get(loss_name.lower(), nn.L1Loss)()
