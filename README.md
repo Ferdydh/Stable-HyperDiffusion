@@ -6,3 +6,10 @@ Run`python lhdm/main.py --help` in root to start. The path to data is `lhdm/data
 2.
 
 For dataset from DWSNets, we have all mnist, and 3 classes from Cifar10 (airplane, bird, automobile)
+
+run this instead
+python -m scripts.insert_name
+
+define your script & hparams here
+
+becareful when defining
