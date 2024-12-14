@@ -1,6 +1,4 @@
-import copy
 from dataclasses import asdict
-from omegaconf import DictConfig, OmegaConf
 import torch
 import pytorch_lightning as pl
 from torch import Tensor
@@ -8,14 +6,14 @@ from typing import Tuple, Dict, List, Optional
 import torch.nn as nn
 import math
 
-from src.core.config import TransformerExperimentConfig, TransformerModelConfig
+from src.core.config import TransformerExperimentConfig
 from src.data.utils import tokens_to_weights, weights_to_tokens
 from src.models.autoencoder.losses import GammaContrastReconLoss
 from src.models.autoencoder.transformer import Encoder, Decoder, ProjectionHead
 from src.data.inr import INR
-from src.models.utils import (
-    create_reconstruction_visualizations_with_state_dict as create_reconstruction_visualizations,
-)
+# from src.models.utils import (
+#     create_reconstruction_visualizations_with_state_dict as create_reconstruction_visualizations,
+# )
 
 
 def transform(tokens, masks, positions):
