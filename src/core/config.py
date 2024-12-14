@@ -97,6 +97,7 @@ class TransformerModelConfig(BaseModelConfig):
     n_tokens: int
     latent_dim: int
     output_dim: int
+    projection_dim: int
 
     @classmethod
     def default(cls) -> "TransformerModelConfig":
@@ -111,6 +112,7 @@ class TransformerModelConfig(BaseModelConfig):
             n_tokens=65,
             latent_dim=128,
             output_dim=30,
+            projection_dim=128,
         )
 
 

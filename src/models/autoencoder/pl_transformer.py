@@ -1,4 +1,5 @@
 import copy
+from dataclasses import asdict
 from omegaconf import DictConfig, OmegaConf
 import torch
 import pytorch_lightning as pl
@@ -7,6 +8,7 @@ from typing import Tuple, Dict, List, Optional
 import torch.nn as nn
 import math
 
+from src.core.config import TransformerExperimentConfig, TransformerModelConfig
 from src.data.utils import tokens_to_weights, weights_to_tokens
 from src.models.autoencoder.losses import GammaContrastReconLoss
 from src.models.autoencoder.transformer import Encoder, Decoder, ProjectionHead
@@ -27,79 +29,43 @@ def transform(tokens, masks, positions):
 class Autoencoder(pl.LightningModule):
     """Autoencoder model with contrastive learning capabilities."""
 
-    def __init__(self, config: DictConfig):
+    def __init__(self, config: TransformerExperimentConfig):
         super().__init__()
-        self.save_hyperparameters(config)
-
-        # Default configuration
-        default_config = OmegaConf.create(
-            {
-                "model": {
-                    "max_positions": [100, 10, 40],
-                    "num_layers": 8,
-                    "d_model": 1024,
-                    "dropout": 0.0,
-                    "window_size": 32,
-                    "num_heads": 8,
-                    "input_dim": 33,
-                    "n_tokens": 65,
-                    "latent_dim": 128,
-                    "projection_dim": 128,
-                },
-                "training": {
-                    "gamma": 0.5,
-                    "reduction": "mean",
-                    "temperature": 0.1,
-                    "contrast": "simclr",
-                    "z_var_penalty": 0.0,
-                },
-                "data": {
-                    "batch_size": 64,
-                },
-                "logging": {
-                    "num_samples_to_visualize": 8,
-                    "log_every_n_steps": 100,
-                    "sample_every_n_epochs": 1,
-                },
-            }
-        )
-
-        # Merge configurations
-        self.config = OmegaConf.merge(default_config, config)
-        model_config = self.config.model
+        self.save_hyperparameters(asdict(config))
+        self.config = config
 
         # Initialize encoder and decoder
         self.encoder = Encoder(
-            max_positions=model_config.max_positions,
-            num_layers=model_config.num_layers,
-            d_model=model_config.d_model,
-            dropout=model_config.dropout,
-            window_size=model_config.window_size,
-            num_heads=model_config.num_heads,
-            input_dim=model_config.input_dim,
-            latent_dim=model_config.latent_dim,
+            max_positions=config.model.max_positions,
+            num_layers=config.model.num_layers,
+            d_model=config.model.d_model,
+            dropout=config.model.dropout,
+            window_size=config.model.window_size,
+            num_heads=config.model.num_heads,
+            input_dim=config.model.input_dim,
+            latent_dim=config.model.latent_dim,
         )
 
         self.decoder = Decoder(
-            max_positions=model_config.max_positions,
-            num_layers=model_config.num_layers,
-            d_model=model_config.d_model,
-            dropout=model_config.dropout,
-            window_size=model_config.window_size,
-            num_heads=model_config.num_heads,
-            input_dim=model_config.input_dim,
-            latent_dim=model_config.latent_dim,
+            max_positions=config.model.max_positions,
+            num_layers=config.model.num_layers,
+            d_model=config.model.d_model,
+            dropout=config.model.dropout,
+            window_size=config.model.window_size,
+            num_heads=config.model.num_heads,
+            input_dim=config.model.input_dim,
+            latent_dim=config.model.latent_dim,
         )
 
         # Initialize projection head
         self.projection_head = ProjectionHead(
-            d_model=model_config.latent_dim,
-            n_tokens=model_config.n_tokens,
-            output_dim=model_config.projection_dim,
+            d_model=config.model.latent_dim,
+            n_tokens=config.model.n_tokens,
+            output_dim=config.model.projection_dim,
         )
 
         # Initialize loss function
-        self.criterion = GammaContrastReconLoss(
+        self.loss_func = GammaContrastReconLoss(
             gamma=self.config.training.gamma,
             reduction=self.config.training.reduction,
             batch_size=self.config.data.batch_size,
@@ -112,14 +78,8 @@ class Autoencoder(pl.LightningModule):
         self.demo_inr = INR(up_scale=16).to(self.device)
 
         # Initialize tracking variables
-        self.fixed_val_samples: Optional[List[Tensor]] = None
-        self.fixed_train_samples: Optional[List[Tensor]] = None
-        self.fixed_sample_reconstructions: Dict[str, List[Tensor]] = {}
-        self.best_val_loss: float = float("inf")
-
-        # Store optimizer and scheduler config
-        self.optimizer_config = config.optimizer
-        self.scheduler_config = config.scheduler
+        self.fixed_val_samples: list[Tensor] | None = None
+        self.fixed_train_samples: list[Tensor] | None = None
 
         # Initialize weights
         self._initialize_weights()
@@ -142,6 +102,26 @@ class Autoencoder(pl.LightningModule):
         for pn, p in self.named_parameters():
             if pn.endswith("c_proj.weight"):
                 torch.nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * num_layers))
+
+    def on_train_start(self):
+        """Setup fixed validation and training samples for visualization."""
+        num_samples = self.config.logging.num_samples_to_visualize
+
+        self.fixed_val_samples = torch.stack(
+            [self.trainer.val_dataloaders.dataset[i] for i in range(num_samples)]
+        ).to(self.device)
+
+        self.fixed_train_samples = torch.stack(
+            [self.trainer.train_dataloader.dataset[i] for i in range(num_samples)]
+        ).to(self.device)
+
+        # TODO: so this is the tokenized version of the weights
+        # FIXME
+        v = log_original_image(self.fixed_val_samples, self.demo_inr, "val")
+        t = log_original_image(self.fixed_train_samples, self.demo_inr, "train")
+
+        self.logger.experiment.log(v)
+        self.logger.experiment.log(t)
 
     def forward(
         self,
@@ -167,6 +147,7 @@ class Autoencoder(pl.LightningModule):
         reconstructed = self.decoder(latent, positions, attention_mask)
         return latent, reconstructed, projected
 
+    # FIXME adjust
     def compute_loss(
         self,
         transform_output_i: Tuple[Tensor, Tensor, Tensor],
@@ -185,62 +166,14 @@ class Autoencoder(pl.LightningModule):
         reconstructions = torch.cat([recon_i, recon_j], dim=0)
         masks = torch.cat([masks_i, masks_j], dim=0)
 
-        loss = self.criterion(
+        loss = self.loss_func(
             z_i=projected_i, z_j=projected_j, y=reconstructions, t=tokens, m=masks
         )
 
         return loss, {f"{prefix}/loss": loss}
 
-    def on_train_start(self):
-        """Setup fixed validation and training samples for visualization."""
-        num_samples = self.config.logging.num_samples_to_visualize
-        val_batch = next(iter(self.trainer.val_dataloaders))
-        self.fixed_val_samples = copy.deepcopy(val_batch[:num_samples])
-        train_batch = next(iter(self.trainer.train_dataloader))
-        self.fixed_train_samples = copy.deepcopy(train_batch[:num_samples])
-
-    def _process_batch(self, batch: List[Tensor]) -> Tuple[Tensor, Tensor, Tensor]:
-        """Convert batch to required tensor format."""
-        tokens, masks, positions = zip(
-            *[weights_to_tokens(b, tokensize=0, device=self.device) for b in batch]
-        )
-        return (
-            torch.stack(tokens).to(self.device),
-            torch.stack(masks).to(self.device),
-            torch.stack(positions).to(self.device).to(torch.int32),
-        )
-
-    def _compute_gradient_norm(self) -> float:
-        """Compute total gradient norm across all parameters."""
-        total_norm = 0.0
-        for p in self.parameters():
-            if p.grad is not None:
-                param_norm = p.grad.data.norm(2)
-                total_norm += param_norm.item() ** 2
-        return total_norm**0.5
-
-    def _log_metrics(self, metrics: Dict[str, Tensor], batch_idx: int, prefix: str):
-        """Log metrics and gradient norm if needed."""
-        self.log_dict(
-            metrics,
-            prog_bar=True,
-            sync_dist=True,
-            batch_size=self.config.data.batch_size,
-        )
-
-        if prefix == "train" and batch_idx % self.config.logging.log_every_n_steps == 0:
-            grad_norm = self._compute_gradient_norm()
-            self.log(
-                "train/grad_norm",
-                grad_norm,
-                prog_bar=False,
-                sync_dist=True,
-                batch_size=self.config.data.batch_size,
-            )
-
-    def visualize_reconstructions(
-        self, samples: List[Tensor], prefix: str, batch_idx: int
-    ):
+    # FIXME adjust
+    def visualize_reconstructions(self, samples: Tensor, prefix: str, batch_idx: int):
         """Visualize reconstructions and log them."""
         if not samples or batch_idx % self.config.logging.log_every_n_steps != 0:
             return
@@ -269,8 +202,23 @@ class Autoencoder(pl.LightningModule):
             vis_dict["global_step"] = self.global_step
             self.logger.experiment.log(vis_dict)
 
+    # FIXME No longer needed
+    def _process_batch(self, batch: List[Tensor]) -> Tuple[Tensor, Tensor, Tensor]:
+        """Convert batch to required tensor format."""
+        tokens, masks, positions = zip(
+            *[weights_to_tokens(b, tokensize=0, device=self.device) for b in batch]
+        )
+        return (
+            torch.stack(tokens).to(self.device),
+            torch.stack(masks).to(self.device),
+            torch.stack(positions).to(self.device).to(torch.int32),
+        )
+
+    # FIXME adjust
     def training_step(self, batch: List[Tensor], batch_idx: int) -> Tensor:
         """Execute a single training step."""
+        raise NotImplementedError()
+
         # Process batch
         tokens, masks, positions = self._process_batch(batch)
 
@@ -294,73 +242,59 @@ class Autoencoder(pl.LightningModule):
             prefix="train",
         )
 
-        # Log metrics
-        self._log_metrics(log_dict, batch_idx, "train")
+        # Log gradient norm
+        # if batch_idx % self.config.trainer.log_every_n_steps == 0:
+        #     total_norm = 0.0
+        #     for p in self.parameters():
+        #         if p.grad is not None:
+        #             param_norm = p.grad.data.norm(2)
+        #             total_norm += param_norm.item() ** 2
+        #     total_norm = total_norm**0.5
+        #     self.log("train/grad_norm", total_norm, prog_bar=False, sync_dist=True)
 
-        # Visualize reconstructions
-        self.visualize_reconstructions(self.fixed_train_samples, "train", batch_idx)
+        #     # Visualize both fixed samples and current batch
+        #     self.visualize_reconstructions(self.fixed_train_samples, "train", batch_idx)
 
         return loss
 
-    def validation_step(self, batch: List[Tensor], batch_idx: int) -> Dict[str, Tensor]:
-        """Execute a single validation step."""
-        # Process batch
-        tokens, masks, positions = self._process_batch(batch)
+    # FIXME adjust
+    def validation_step(self, batch, batch_idx: int) -> dict[str, Tensor]:
+        raise NotImplementedError()
+        reconstructions = self.forward(batch)
+        val_loss, val_log_dict = self.compute_loss(batch, reconstructions, prefix="val")
 
-        # Get transformed versions (placeholder for now)
-        tokens_i, masks_i, positions_i, tokens_j, masks_j, positions_j = transform(
-            tokens, masks, positions
-        )
+        # Log validation metrics
+        self.log_dict(val_log_dict, prog_bar=True, batch_size=batch.shape[0])
 
-        # Forward pass
-        transform_output_i = self.forward(tokens_i, positions_i)
-        transform_output_j = self.forward(tokens_j, positions_j)
-
-        # Compute loss
-        loss, log_dict = self.compute_loss(
-            transform_output_i,
-            transform_output_j,
-            tokens_i,
-            tokens_j,
-            masks_i,
-            masks_j,
-            prefix="val",
-        )
-
-        # Log metrics
-        self._log_metrics(log_dict, batch_idx, "val")
-
-        # Visualize reconstructions
+        # Visualize both fixed samples and current batch
         if (
             batch_idx == 0
             and self.current_epoch % self.config.logging.sample_every_n_epochs == 0
         ):
             self.visualize_reconstructions(self.fixed_val_samples, "val", batch_idx)
 
-        return log_dict
+        return val_loss
 
     def configure_optimizers(self):
-        """Configure optimizers and learning rate schedulers."""
         # Configure optimizer
         optimizer = torch.optim.AdamW(
             self.parameters(),
-            lr=self.optimizer_config.lr,
-            betas=tuple(self.optimizer_config.betas),
-            eps=self.optimizer_config.eps,
-            weight_decay=self.optimizer_config.weight_decay,
+            lr=self.config.optimizer.lr,
+            betas=tuple(self.config.optimizer.betas),
+            eps=self.config.optimizer.eps,
+            weight_decay=self.config.optimizer.weight_decay,
         )
 
-        # Configure scheduler
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer,
-            T_max=self.scheduler_config.T_max,
-            eta_min=self.scheduler_config.eta_min,
+            T_max=self.config.scheduler.T_max,
+            eta_min=self.config.scheduler.eta_min,
         )
 
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "monitor": "val/loss",
+                "monitor": self.config.checkpoint.monitor,
             },
         }

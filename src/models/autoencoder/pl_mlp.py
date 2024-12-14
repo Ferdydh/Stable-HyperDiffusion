@@ -56,7 +56,6 @@ class Autoencoder(pl.LightningModule):
         # Initialize fixed validation and training samples
         self.fixed_val_samples: list[Tensor] | None = None
         self.fixed_train_samples: list[Tensor] | None = None
-        self.fixed_sample_reconstructions: dict[str, list[Tensor]] = {}
 
         # Initialize loss function
         self.loss_func = nn.MSELoss()
