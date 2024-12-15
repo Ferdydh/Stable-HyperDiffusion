@@ -4,8 +4,8 @@ from src.core.train import train
 
 if __name__ == "__main__":
     config: MLPExperimentConfig = MLPExperimentConfig.default()
-    config.data = DataConfig.sanity(False)
-    config.early_stopping.min_delta = 1e-6
+    config.data = DataConfig.small(False)
+    config.early_stopping.min_delta = 1e-5
     config.early_stopping.patience = 200
     config.trainer.max_epochs = 1000
     # config.data.batch_size = 1

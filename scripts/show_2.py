@@ -5,7 +5,7 @@ from src.data.inr_dataset import (
     DataHandler,
 )
 
-from src.core.config import MLPExperimentConfig
+from src.core.config import DataSelector, DatasetType, MLPExperimentConfig
 
 import matplotlib
 
@@ -14,6 +14,9 @@ matplotlib.use("TkAgg")
 
 if __name__ == "__main__":
     config = MLPExperimentConfig.default()
+    config.data.selector = DataSelector(
+        dataset_type=DatasetType.MNIST, class_label=2, sample_id=1096
+    )
     mlp = INR(up_scale=16)
 
     data_handler = DataHandler(config=config)

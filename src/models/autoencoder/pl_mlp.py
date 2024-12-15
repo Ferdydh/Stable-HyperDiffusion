@@ -106,23 +106,22 @@ class Autoencoder(pl.LightningModule):
 
     def visualize_reconstructions(self, samples: Tensor, prefix: str, batch_idx: int):
         """Helper method to visualize fixed sample reconstructions during training or validation."""
-        if (
-            samples is not None
-            and batch_idx % self.config.logging.log_every_n_steps == 0
-        ):
-            with torch.no_grad():
-                reconstructions = self.forward(samples)
+        if samples is None:
+            raise ValueError("Fixed samples not initialized.")
 
-            # Create and log visualizations
-            vis_dict = log_reconstructed_image(
-                reconstructions,
-                self.demo_inr,
-                prefix,
-            )
+        with torch.no_grad():
+            reconstructions = self.forward(samples)
 
-            # Add step to wandb log
-            vis_dict["global_step"] = self.global_step
-            self.logger.experiment.log(vis_dict)
+        # Create and log visualizations
+        vis_dict = log_reconstructed_image(
+            reconstructions,
+            self.demo_inr,
+            prefix,
+        )
+
+        # Add step to wandb log
+        vis_dict["global_step"] = self.global_step
+        self.logger.experiment.log(vis_dict)
 
     def training_step(self, batch, batch_idx: int) -> Tensor:
         # Forward pass

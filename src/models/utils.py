@@ -8,6 +8,7 @@ from src.data.inr import INR
 from src.data.utils import flattened_weights_to_weights
 
 
+# TODO: right now we take in flattened weights, but we should take in the original weights
 def log_reconstructed_image(
     reconstructions: Tensor,
     inr_model: INR,
@@ -30,6 +31,7 @@ def log_reconstructed_image(
     return result_dict
 
 
+# TODO: right now we take in flattened weights, but we should take in the original weights
 def log_original_image(
     originals: Tensor,
     inr_model: INR,
