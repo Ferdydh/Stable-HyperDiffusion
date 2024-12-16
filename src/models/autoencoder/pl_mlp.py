@@ -107,7 +107,8 @@ class Autoencoder(pl.LightningModule):
     def visualize_reconstructions(self, samples: Tensor, prefix: str, batch_idx: int):
         """Helper method to visualize fixed sample reconstructions during training or validation."""
         if samples is None:
-            raise ValueError("Fixed samples not initialized.")
+            print("Fixed samples not initialized.")
+            return
 
         with torch.no_grad():
             reconstructions = self.forward(samples)
