@@ -59,10 +59,6 @@ def train(
         # Initialize data handler
         data_handler = DataHandler(config)
 
-        # Get dataloaders
-        train_loader = data_handler.train_dataloader()
-        val_loader = data_handler.val_dataloader()
-
         # Setup callbacks
         callbacks = []
 
@@ -110,9 +106,7 @@ def train(
         wandb.require("service")
 
         # Train model
-        trainer.fit(
-            model=model, train_dataloaders=train_loader, val_dataloaders=val_loader
-        )
+        trainer.fit(model=model, datamodule=data_handler)
 
         print("\nTraining completed successfully!")
 
