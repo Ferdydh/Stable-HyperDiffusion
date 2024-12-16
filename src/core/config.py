@@ -143,8 +143,8 @@ class DataConfig:
         return cls(
             data_path=base_path,
             selector=DataSelector(dataset_type=DatasetType.MNIST, class_label=2),
-            batch_size=8,
-            sample_limit=10,
+            batch_size=2,
+            sample_limit=2,
         )
 
     @classmethod

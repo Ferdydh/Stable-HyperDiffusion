@@ -19,6 +19,7 @@ from src.core.config import (
     TransformerExperimentConfig,
 )
 
+import hashlib
 
 def cleanup_wandb():
     """Ensure wandb run is properly closed."""
@@ -27,6 +28,39 @@ def cleanup_wandb():
     except:
         pass
 
+
+def hash_tensor(tensor):
+    """
+    Create a hash for a tensor to uniquely identify it.
+    """
+    return hashlib.sha256(tensor.numpy().tobytes()).hexdigest()
+
+
+def perform_sanity_check(train_loader, val_loader):
+    """Perform a sanity check to ensure there is no data leakage between train and validation sets."""
+    train_hashes = set()
+    val_hashes = set()
+
+    # Generate hashes for training data
+    print("Processing training dataset...")
+    for batch in train_loader:
+        data = batch[0]  # Assuming the data is the first element of the batch
+        for item in data:
+            train_hashes.add(hash_tensor(item.cpu()))
+
+    # Generate hashes for validation data
+    print("Processing validation dataset...")
+    for batch in val_loader:
+        data = batch[0]  # Assuming the data is the first element of the batch
+        for item in data:
+            val_hashes.add(hash_tensor(item.cpu()))
+
+    # Check for overlap
+    overlap = train_hashes & val_hashes
+    if overlap:
+        print(f"Data leakage detected! {len(overlap)} overlapping samples found.")
+    else:
+        print("No data leakage detected.")
 
 def train(
     model: pl.LightningModule,
@@ -62,6 +96,9 @@ def train(
         # Get dataloaders
         train_loader = data_handler.train_dataloader()
         val_loader = data_handler.val_dataloader()
+
+        # Sanity check for data leakage:
+        perform_sanity_check(train_loader, val_loader)
 
         # Setup callbacks
         callbacks = []
