@@ -4,6 +4,7 @@ from torch.utils.data import Dataset, DataLoader, random_split
 import os
 import multiprocessing
 import random
+import pytorch_lightning as pl
 
 from src.core.config import (
     DataSelector,
@@ -57,11 +58,13 @@ def collate_state_dicts_as_list(batch):
     return batch
 
 
-class DataHandler:
+class DataHandler(pl.LightningDataModule):
     def __init__(
         self,
         config: MLPExperimentConfig | TransformerExperimentConfig,
     ):
+        super().__init__()
+
         self.config = config
 
         self.split_ratio = config.data.split_ratio

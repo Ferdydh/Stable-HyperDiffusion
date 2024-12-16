@@ -147,9 +147,7 @@ def train(
         wandb.require("service")
 
         # Train model
-        trainer.fit(
-            model=model, train_dataloaders=train_loader, val_dataloaders=val_loader
-        )
+        trainer.fit(model=model, datamodule=data_handler)
 
         print("\nTraining completed successfully!")
 

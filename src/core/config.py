@@ -372,8 +372,3 @@ class TransformerExperimentConfig(BaseExperimentConfig):
             early_stopping=EarlyStoppingConfig.default(),
             device=get_device(),
         )
-
-
-def get_quick_config(is_simon: bool = False) -> MLPExperimentConfig:
-    """Quick config for fast prototyping."""
-    return MLPExperimentConfig.default(is_simon)
