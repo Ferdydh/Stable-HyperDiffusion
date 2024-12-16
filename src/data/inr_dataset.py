@@ -34,6 +34,7 @@ class INRDataset(Dataset):
         tokens, masks, pos = weights_to_tokens(
             state_dict, tokensize=0, device=self.device
         )
+
         return tokens, masks, pos
 
     def get_state_dict(self, index):
@@ -45,15 +46,15 @@ class INRDataset(Dataset):
         return len(self.files)
 
 
-# def collate_state_dicts_as_list(batch):
-#     """
-#     Custom collate function to return a batch as a list of state_dicts.
-#     Args:
-#         batch (list): A list of state_dicts from the Dataset.
-#     Returns:
-#         list: The batch as a list of state_dicts.
-#     """
-#     return batch
+def collate_state_dicts_as_list(batch):
+    """
+    Custom collate function to return a batch as a list of state_dicts.
+    Args:
+        batch (list): A list of state_dicts from the Dataset.
+    Returns:
+        list: The batch as a list of state_dicts.
+    """
+    return batch
 
 
 class DataHandler:
@@ -164,36 +165,51 @@ class DataHandler:
         )
 
     def train_dataloader(self):
+        collate_fn = collate_state_dicts_as_list
+
+        if self.is_for_mlp:
+            collate_fn = None
+            
         return DataLoader(
             self.train_dataset,
             batch_size=self.config.data.batch_size,
             num_workers=self.config.data.num_workers,
             shuffle=True,
             persistent_workers=True,
-            # collate_fn=collate_state_dicts_as_list,
-            drop_last=False,
+            collate_fn=collate_fn,
+            drop_last=True,
         )
 
     def val_dataloader(self):
+        collate_fn = collate_state_dicts_as_list
+
+        if self.is_for_mlp:
+            collate_fn = None
+
         return DataLoader(
             self.val_dataset,
             batch_size=self.config.data.batch_size,
             num_workers=self.config.data.num_workers,
             shuffle=False,
             persistent_workers=True,
-            # collate_fn=collate_state_dicts_as_list,
-            drop_last=False,
+            collate_fn=collate_fn,
+            drop_last=True,
         )
 
     def test_dataloader(self):
+        collate_fn = collate_state_dicts_as_list
+
+        if self.is_for_mlp:
+            collate_fn = None
+            
         return DataLoader(
             self.test_dataset,
             batch_size=self.config.data.batch_size,
             num_workers=self.config.data.num_workers,
             shuffle=False,
             persistent_workers=True,
-            # collate_fn=collate_state_dicts_as_list,
-            drop_last=False,
+            collate_fn=collate_fn,
+            drop_last=True,
         )
 
     def get_state_dict(self, index):
