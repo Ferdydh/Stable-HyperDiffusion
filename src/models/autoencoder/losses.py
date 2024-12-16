@@ -289,6 +289,8 @@ class GammaContrastReconLoss(nn.Module):
                     # compute embedding properties
         z_norm = torch.linalg.norm(z_i.view(z_i.shape[0], -1), ord=2, dim=1).mean()
         z_var = torch.mean(torch.var(z_i.view(z_i.shape[0], -1), dim=0))
+        if torch.isnan(z_var):
+            z_var = 0
         out["debug/z_norm"] = z_norm
         out["debug/z_var"] = z_var
         # if self.z_var_penalty > 0:
@@ -296,4 +298,4 @@ class GammaContrastReconLoss(nn.Module):
         # if self.z_norm_penalty > 0:
         out["loss/loss"] = out["loss/loss"] + self.z_norm_penalty * z_norm
 
-        return out["loss/loss"]
+        return out

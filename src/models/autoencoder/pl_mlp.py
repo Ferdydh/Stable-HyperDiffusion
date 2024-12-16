@@ -13,34 +13,38 @@ from src.models.utils import log_original_image, log_reconstructed_image
 class Encoder(nn.Module):
     def __init__(self, config: MLPModelConfig):
         super(Encoder, self).__init__()
-        self.fc1 = nn.Linear(config.input_dim, config.hidden_dim)
-        self.fc2 = nn.Linear(config.hidden_dim, config.hidden_dim)
-        self.fc3 = nn.Linear(config.hidden_dim, config.z_dim)
-        self.activation_func = config.activation()
+        self.model = nn.Sequential(
+            nn.Linear(config.input_dim, config.hidden_dim),
+            nn.BatchNorm1d(config.hidden_dim),
+            self.activation_func,	
+            nn.Linear(config.hidden_dim, config.hidden_dim),
+            nn.BatchNorm1d(config.hidden_dim),
+            self.activation_func,
+            nn.Linear(config.hidden_dim, config.z_dim),
+        )
 
     def forward(self, x):
-        x = self.activation_func(self.fc1(x))
-        x = self.activation_func(self.fc2(x))
-        z = self.fc3(x)
-        return z
+        return self.model(x)
 
 
 class Decoder(nn.Module):
     def __init__(self, config: MLPModelConfig):
         super(Decoder, self).__init__()
-        self.fc1 = nn.Linear(config.z_dim, config.hidden_dim)
-        self.fc2 = nn.Linear(config.hidden_dim, config.hidden_dim)
-        self.fc3 = nn.Linear(config.hidden_dim, config.output_dim)
-        self.activation_func = config.activation()
+        self.model = nn.Sequential(
+            nn.Linear(config.z_dim, config.hidden_dim),
+            nn.BatchNorm1d(config.hidden_dim),
+            self.activation_func,
+            nn.Linear(config.hidden_dim, config.hidden_dim),
+            nn.BatchNorm1d(config.hidden_dim),
+            self.activation_func,
+            nn.Linear(config.hidden_dim, config.output_dim),
+        )
 
     def forward(
         self,
         z: Tensor,
     ) -> Tensor:
-        z = self.activation_func(self.fc1(z))
-        z = self.activation_func(self.fc2(z))
-        x_reconstructed = self.fc3(z)
-        return x_reconstructed
+        return self.model(z)
 
 
 class Autoencoder(pl.LightningModule):
@@ -164,7 +168,7 @@ class Autoencoder(pl.LightningModule):
     def configure_optimizers(self):
         # Configure optimizer
         optimizer = torch.optim.AdamW(
-            self.parameters(),
+            list(self.encoder.parameters()) + list(self.decoder.parameters()),
             lr=self.config.optimizer.lr,
             betas=tuple(self.config.optimizer.betas),
             eps=self.config.optimizer.eps,
