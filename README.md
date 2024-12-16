@@ -25,6 +25,9 @@
    conda activate lhdm
    ```
 
+Save with this
+conda env export --no-builds > environment.yaml
+
 ## Dataset Information
 
 The project supports:
@@ -61,9 +64,9 @@ The default dataset split ratio is:
 For quick experimentation, use:
 
 ```python
-from src.core.config import get_quick_config
+from src.core.config import MLPExperiment
 
-config = get_quick_config()  # Returns MLPExperimentConfig with default settings
+config = MLPExperimentConfig.default()
 ```
 
 For more detailed configuration options and parameters, refer to the docstrings in `src/core/config.py`.
