@@ -128,6 +128,64 @@ class NT_Xent(nn.Module):
         return loss
 
 
+################################################################################################
+# contrastive loss that dynamically adjusts to the current batch size
+################################################################################################
+class NT_Xent_dynamic(nn.Module):
+    def __init__(self, batch_size, temperature):
+        super(NT_Xent, self).__init__()
+        self.temperature = temperature
+
+        #self.mask = self.mask_correlated_samples(batch_size)
+        self.criterion = nn.CrossEntropyLoss(reduction="sum")
+        self.similarity_f = nn.CosineSimilarity(dim=2)
+
+    def mask_correlated_samples(self, batch_size):
+        # create mask for negative samples: main diagonal, +-batch_size off-diagonal are set to 0
+        N = 2 * batch_size
+        mask = torch.ones((N, N), dtype=bool)
+        mask = mask.fill_diagonal_(0)
+        for i in range(batch_size):
+            mask[i, batch_size + i] = 0
+            mask[batch_size + i, i] = 0
+        return mask
+
+    def forward(self, z_i, z_j):
+        """
+        z_i, z_j: representations of batch in two different views. shape: batch_size x C
+        We do not sample negative examples explicitly.
+        Instead, given a positive pair, similar to (Chen et al., 2017), we treat the other 2(N − 1) augmented examples within a minibatch as negative examples.
+        """
+        batch_size = z_i.shape[0]
+        mask = self.mask_correlated_samples(batch_size)
+        # dimension of similarity matrix
+        N = 2 * batch_size
+        # concat both representations to easily compute similarity matrix
+        z = torch.cat((z_i, z_j), dim=0)
+        # compute similarity matrix around dimension 2, which is the representation depth. the unsqueeze ensures the matmul/ outer product
+        sim = self.similarity_f(z.unsqueeze(1), z.unsqueeze(0)) / self.temperature
+        # take positive samples
+        sim_i_j = torch.diag(sim, batch_size)
+        sim_j_i = torch.diag(sim, -batch_size)
+
+        # print("sim_i_j shape:", sim_i_j.shape)
+        # print("sim_j_i shape:", sim_j_i.shape)
+
+        # We have 2N samples,resulting in: 2xNx1
+        positive_samples = torch.cat((sim_i_j, sim_j_i), dim=0).reshape(N, 1)
+        # negative samples are singled out with the mask
+        negative_samples = sim[mask].reshape(N, -1)
+
+        # reformulate everything in terms of CrossEntropyLoss: https://pytorch.org/docs/master/generated/torch.nn.CrossEntropyLoss.html
+        # labels in nominator, logits in denominator
+        # positve class: 0 - that's the first component of the logits corresponding to the positive samples
+        labels = torch.zeros(N).to(positive_samples.device).long()
+        # the logits are NxN (N+1?) predictions for imaginary classes.
+        logits = torch.cat((positive_samples, negative_samples), dim=1)
+        loss = self.criterion(logits, labels)
+        loss /= N
+        return loss
+
 class NT_Xent_pos(nn.Module):
     def __init__(self, batch_size, temperature):
         super(NT_Xent_pos, self).__init__()
@@ -216,6 +274,9 @@ class GammaContrastReconLoss(nn.Module):
         elif contrast == "positive":
             print("model: use only positive contrast loss")
             self.loss_contrast = NT_Xent_pos(batch_size, temperature)
+        elif contrast == "simclr_dynamic":
+            print("model: use simclr NT_Xent loss with dynamic batch size")
+            self.loss_contrast = NT_Xent_dynamic(batch_size, temperature)
         else:
             print("unrecognized contrast - use reconstruction only")
 

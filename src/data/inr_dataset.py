@@ -180,7 +180,7 @@ class DataHandler(pl.LightningDataModule):
             shuffle=True,
             persistent_workers=True,
             collate_fn=collate_fn,
-            drop_last=True,
+            drop_last=False,
         )
 
     def val_dataloader(self):
@@ -196,7 +196,7 @@ class DataHandler(pl.LightningDataModule):
             shuffle=False,
             persistent_workers=True,
             collate_fn=collate_fn,
-            drop_last=True,
+            drop_last=False,
         )
 
     def test_dataloader(self):
@@ -212,7 +212,7 @@ class DataHandler(pl.LightningDataModule):
             shuffle=False,
             persistent_workers=True,
             collate_fn=collate_fn,
-            drop_last=True,
+            drop_last=False,
         )
 
     def get_state_dict(self, index):
