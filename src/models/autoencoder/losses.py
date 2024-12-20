@@ -132,8 +132,8 @@ class NT_Xent(nn.Module):
 # contrastive loss that dynamically adjusts to the current batch size
 ################################################################################################
 class NT_Xent_dynamic(nn.Module):
-    def __init__(self, batch_size, temperature):
-        super(NT_Xent, self).__init__()
+    def __init__(self, temperature):
+        super(NT_Xent_dynamic, self).__init__()
         self.temperature = temperature
 
         #self.mask = self.mask_correlated_samples(batch_size)
@@ -276,7 +276,7 @@ class GammaContrastReconLoss(nn.Module):
             self.loss_contrast = NT_Xent_pos(batch_size, temperature)
         elif contrast == "simclr_dynamic":
             print("model: use simclr NT_Xent loss with dynamic batch size")
-            self.loss_contrast = NT_Xent_dynamic(batch_size, temperature)
+            self.loss_contrast = NT_Xent_dynamic(temperature)
         else:
             print("unrecognized contrast - use reconstruction only")
 

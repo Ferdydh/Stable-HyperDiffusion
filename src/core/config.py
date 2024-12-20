@@ -320,6 +320,49 @@ class TrainingConfig:
         )
 
 
+
+@dataclass
+class AugmentationConfig:
+    """Contrastive learning configuration for transformer"""
+
+    permutation_number_train: int
+    permutation_number_val: int
+    view_1_canon_train: bool
+    view_1_canon_val: bool
+    view_2_canon_train: bool
+    view_2_canon_val: bool
+    add_noise_view_1_train: float
+    add_noise_view_1_val: float
+    add_noise_view_2_train: float
+    add_noise_view_2_val: float
+    erase_augment_view_1_train: float
+    erase_augment_view_2_train: float
+    erase_augment_view_1_val: float
+    erase_augment_view_2_val: float
+    multi_windows_train: float
+
+    @classmethod
+    def default(cls) -> "AugmentationConfig":
+        return cls(
+            permutation_number_train = 5,
+            permutation_number_val = 5,
+            view_1_canon_train = False,
+            view_1_canon_val = True,
+            view_2_canon_train = True,
+            view_2_canon_val = False,
+            add_noise_view_1_train = 0.1,
+            add_noise_view_1_val = 0.0,
+            add_noise_view_2_train = 0.1,
+            add_noise_view_2_val = 0.0,           
+            erase_augment_view_1_train = None,
+            erase_augment_view_2_train = None,
+            erase_augment_view_1_val = None,
+            erase_augment_view_2_val = None,
+            multi_windows_train = None
+        )
+
+
+
 @dataclass
 class BaseExperimentConfig:
     """Base configuration for all experiments"""
@@ -331,6 +374,7 @@ class BaseExperimentConfig:
     logging: LoggingConfig
     checkpoint: CheckpointConfig
     early_stopping: EarlyStoppingConfig
+    augmentations: AugmentationConfig
     device: torch.device
 
 
@@ -349,6 +393,7 @@ class MLPExperimentConfig(BaseExperimentConfig):
             logging=LoggingConfig.sanity(),
             checkpoint=CheckpointConfig.default(),
             early_stopping=EarlyStoppingConfig.default(),
+            augmentations=None,
             device=get_device(),
         )
 
@@ -370,5 +415,6 @@ class TransformerExperimentConfig(BaseExperimentConfig):
             logging=LoggingConfig.sanity(),
             checkpoint=CheckpointConfig.default(),
             early_stopping=EarlyStoppingConfig.default(),
+            augmentations=AugmentationConfig.default(),
             device=get_device(),
         )
