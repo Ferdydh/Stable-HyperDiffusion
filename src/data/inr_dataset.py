@@ -1,6 +1,6 @@
 from typing import Optional
 import torch
-from torch.utils.data import Dataset, DataLoader, dataset
+from torch.utils.data import Dataset, DataLoader, random_split
 import os
 import multiprocessing
 import random
@@ -92,46 +92,43 @@ class DataHandler(pl.LightningDataModule):
     def setup(self, stage: Optional[str] = None):
         # Create split datasets
         if stage == "fit" or stage is None:
-            full_dataset = INRDataset(
-                files=self.files, device=self.config.device, is_for_mlp=self.is_for_mlp
-            )
+            #full_dataset = INRDataset(
+            #    files=self.files, device=self.config.device, is_for_mlp=self.is_for_mlp
+            #)
 
             # Calculate split sizes
-            train_size = int(len(full_dataset) * self.split_ratio)
-            val_size = len(full_dataset) - train_size
+            train_size = int(len(self.files) * self.split_ratio)
+            val_size = len(self.files) - train_size
 
-            if train_size == len(full_dataset) or val_size == 0 or train_size == 0:
+            if train_size == len(self.files) or val_size == 0 or train_size == 0:
                 # This should only happen if we have sample_limit=1 or split_ratio=1.0
-                self.train_dataset = full_dataset
-                self.val_dataset = full_dataset
-
-                # For logging purposes
-                self.actual_train_files = self.train_dataset.files
-                self.actual_val_files = self.val_dataset.files
+                train_files = self.files
+                val_files = self.files   
             else:
-                self.train_dataset, self.val_dataset = dataset.random_split(
-                    full_dataset, [train_size, val_size]
+                train_files, val_files = random_split(
+                    self.files, [train_size, val_size]
                 )
 
-                # For logging purposes
-                self.actual_train_files = self.train_dataset.dataset.files
-                self.actual_val_files = self.val_dataset.dataset.files
-
+            self.train_dataset = INRDataset(
+                files=train_files, device=self.config.device, is_for_mlp=self.is_for_mlp
+            )
+            self.val_dataset = INRDataset(
+                files=val_files, device=self.config.device, is_for_mlp=self.is_for_mlp
+            )
             print(f"Train size: {len(self.train_dataset)}")
             print(f"Val size: {len(self.val_dataset)}")
 
-            print("Train dataset: ", self.actual_train_files)
-            print("Val dataset: ", self.actual_val_files)
-
             # Check if there are any overlapping files between train and val
-            overlapping_files = set(self.actual_train_files).intersection(
-                set(self.actual_val_files)
+            overlapping_files = set(self.train_dataset.files).intersection(
+                set(self.val_dataset.files)
             )
             if overlapping_files:
                 print(
                     "Warning: There are overlapping files between train and val datasets."
                 )
-                print("Overlapping files: ", overlapping_files)
+                print("Overlapping files: ", len(overlapping_files))
+            else:
+                print("No overlapping files between train and val datasets.")
 
     def train_dataloader(self):
         collate_fn = collate_state_dicts_as_list if not self.is_for_mlp else None

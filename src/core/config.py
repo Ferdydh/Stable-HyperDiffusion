@@ -333,6 +333,7 @@ class AugmentationConfig:
     erase_augment_view_1_val: float
     erase_augment_view_2_val: float
     multi_windows_train: float
+    apply_augmentations: bool
 
     @classmethod
     def default(cls) -> "AugmentationConfig":
@@ -352,6 +353,28 @@ class AugmentationConfig:
             erase_augment_view_1_val=None,
             erase_augment_view_2_val=None,
             multi_windows_train=None,
+            apply_augmentations=True,
+        )
+    
+    @classmethod
+    def no_aug(cls) -> "AugmentationConfig":
+        return cls(
+            permutation_number_train=5,
+            permutation_number_val=5,
+            view_1_canon_train=False,
+            view_1_canon_val=True,
+            view_2_canon_train=True,
+            view_2_canon_val=False,
+            add_noise_view_1_train=0.1,
+            add_noise_view_1_val=0.0,
+            add_noise_view_2_train=0.1,
+            add_noise_view_2_val=0.0,
+            erase_augment_view_1_train=None,
+            erase_augment_view_2_train=None,
+            erase_augment_view_1_val=None,
+            erase_augment_view_2_val=None,
+            multi_windows_train=None,
+            apply_augmentations=False,
         )
 
 

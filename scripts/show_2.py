@@ -1,5 +1,5 @@
 from matplotlib import pyplot as plt
-from core.visualize import plot_image
+from src.core.visualize import plot_image
 from src.data.inr import INR
 from src.data.inr_dataset import (
     DataHandler,
@@ -17,7 +17,9 @@ if __name__ == "__main__":
 
     data_handler = DataHandler(config=config)
 
-    state_dict = data_handler.get_state_dict(index=0)
+    data_handler.setup()
+
+    state_dict = data_handler.train_dataloader().dataset.get_state_dict(index=0)
     mlp.load_state_dict(state_dict)
     plot_image(mlp_model=mlp, device="cpu")
 

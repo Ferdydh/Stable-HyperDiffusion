@@ -10,7 +10,7 @@ from scipy.optimize import linear_sum_assignment
 
 from typing import NamedTuple
 
-from data.data_converter import (
+from src.data.data_converter import (
     weights_to_tokens as tokenize_checkpoint,
     tokens_to_weights as tokens_to_checkpoint,
 )

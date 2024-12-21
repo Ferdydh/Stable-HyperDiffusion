@@ -15,7 +15,7 @@ def flattened_weights_to_image_dict(
     return weights_to_image_dict(weights, inr_model, prefix, device)
 
 
-def weights_to_image_dict(weights: Tensor, inr_model: INR, prefix, device):
+def weights_to_image_dict(weights: list, inr_model: INR, prefix, device):
     result_dict = {}
 
     # Create visualizations for each pair

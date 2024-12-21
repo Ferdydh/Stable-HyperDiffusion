@@ -10,7 +10,7 @@ from src.core.config import TransformerExperimentConfig
 from src.models.utils import (
     weights_to_image_dict,
 )
-from data.data_converter import tokens_to_weights
+from src.data.data_converter import tokens_to_weights
 from src.models.autoencoder.losses import GammaContrastReconLoss
 from src.models.autoencoder.transformer import Encoder, Decoder, ProjectionHead
 from src.data.inr import INR
@@ -27,6 +27,9 @@ from src.data.augmentations import (
 # from src.models.utils import (
 #     create_reconstruction_visualizations_with_state_dict as create_reconstruction_visualizations,
 # )
+
+def identity_transform(tensor, mask, pos):
+    return tensor, mask, pos, tensor, mask, pos
 
 
 class Autoencoder(pl.LightningModule):
@@ -88,7 +91,10 @@ class Autoencoder(pl.LightningModule):
         self._initialize_weights()
 
         # Initialize transformations
-        self.setup_transformations()
+        if self.config.augmentations.apply_augmentations:
+            self.setup_transformations()
+        else:
+            self.val_transforms = self.train_transforms = identity_transform
 
     def _initialize_weights(self):
         """Initialize model weights with specific distributions."""
@@ -434,7 +440,10 @@ class Autoencoder(pl.LightningModule):
 
         self.log_dict(log_dict, prog_bar=True, sync_dist=True)
 
-        if batch_idx % self.config.trainer.log_every_n_steps == 0:
+        if (
+            batch_idx == 0
+            and self.current_epoch % self.config.logging.sample_every_n_epochs == 0
+        ):
             # self.visualize_reconstructions(
             #    batch, "train", batch_idx
             # )

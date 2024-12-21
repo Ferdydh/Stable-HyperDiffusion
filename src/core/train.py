@@ -19,8 +19,6 @@ from src.core.config import (
     TransformerExperimentConfig,
 )
 
-import hashlib
-
 
 def cleanup_wandb():
     """Ensure wandb run is properly closed."""
@@ -100,7 +98,7 @@ def train(
             precision=config.trainer.precision,
             gradient_clip_val=config.trainer.gradient_clip_val,
             accumulate_grad_batches=config.trainer.accumulate_grad_batches,
-            val_check_interval=1.0,
+            val_check_interval=config.trainer.val_check_interval,
             log_every_n_steps=config.trainer.log_every_n_steps,
         )
 

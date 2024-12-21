@@ -7,18 +7,19 @@ import torch.nn as nn
 
 from src.core.config import MLPExperimentConfig, MLPModelConfig
 from src.data.inr import INR
-from src.models.utils import flattened_weights_to_image_dict
+from src.models.utils import weights_to_image_dict, flattened_weights_to_image_dict
 
 
 class Encoder(nn.Module):
     def __init__(self, config: MLPModelConfig):
         super(Encoder, self).__init__()
+
         self.model = nn.Sequential(
             nn.Linear(config.input_dim, config.hidden_dim),
-            nn.BatchNorm1d(config.hidden_dim),
+            #nn.BatchNorm1d(config.hidden_dim),
             config.activation(),
             nn.Linear(config.hidden_dim, config.hidden_dim),
-            nn.BatchNorm1d(config.hidden_dim),
+            #nn.BatchNorm1d(config.hidden_dim),
             config.activation(),
             nn.Linear(config.hidden_dim, config.z_dim),
         )
@@ -32,10 +33,10 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.model = nn.Sequential(
             nn.Linear(config.z_dim, config.hidden_dim),
-            nn.BatchNorm1d(config.hidden_dim),
+            #nn.BatchNorm1d(config.hidden_dim),
             config.activation(),
             nn.Linear(config.hidden_dim, config.hidden_dim),
-            nn.BatchNorm1d(config.hidden_dim),
+            #nn.BatchNorm1d(config.hidden_dim),
             config.activation(),
             nn.Linear(config.hidden_dim, config.output_dim),
         )
@@ -131,6 +132,7 @@ class Autoencoder(pl.LightningModule):
             return
 
         with torch.no_grad():
+            self.eval()
             reconstructions = self.forward(samples)
 
         # Create and log visualizations
@@ -138,6 +140,7 @@ class Autoencoder(pl.LightningModule):
             reconstructions,
             self.demo_inr,
             f"{prefix}/reconstruction",
+            device=self.device
         )
 
         # Add step to wandb log
@@ -147,8 +150,8 @@ class Autoencoder(pl.LightningModule):
     def training_step(self, batch, batch_idx: int) -> Tensor:
         # Forward pass
 
-        print("batch.shape", batch.shape)
-        print(batch)
+        #print("batch.shape", batch.shape)
+        #print(batch)
         reconstructions = self.forward(batch)
         loss, log_dict = self.compute_loss(batch, reconstructions, prefix="train")
 
