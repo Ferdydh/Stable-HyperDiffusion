@@ -6,14 +6,17 @@ import random
 
 from scipy.optimize import linear_sum_assignment
 
-#import logging
+# import logging
 
 from typing import NamedTuple
 
-from src.data.utils import weights_to_tokens as tokenize_checkpoint, tokens_to_weights as tokens_to_checkpoint
+from data.data_converter import (
+    weights_to_tokens as tokenize_checkpoint,
+    tokens_to_weights as tokens_to_checkpoint,
+)
 
 import copy
-#import ray
+# import ray
 
 
 #############################################################################
@@ -108,7 +111,7 @@ class TwoViewSplit(torch.nn.Module):
         if self.view_2_canon == True:
             perm_ids[1] = 0
         # slice+clone second sample first
-        #logging.debug(f"perm_ids: {perm_ids}")
+        # logging.debug(f"perm_ids: {perm_ids}")
         ddx2 = (
             torch.index_select(ddx1.clone(), -3, perm_ids[1]).squeeze().to(ddx1.device)
         )
@@ -180,7 +183,7 @@ class PermutationSelector(torch.nn.Module):
         perm_ids = torch.randperm(
             n=ddx.shape[-3], dtype=torch.int32, device=ddx.device
         )[:1]
-        #logging.debug(f"perm_ids: {perm_ids}")
+        # logging.debug(f"perm_ids: {perm_ids}")
         # ddx = ddx[perm_ids[0]]
         ddx = torch.index_select(ddx, -3, perm_ids[0]).squeeze().to(ddx.device)
 
@@ -362,7 +365,6 @@ class NoiseAugmentation(torch.nn.Module):
 #############################################################################
 
 
-
 class PermutationAugmentation(torch.nn.Module):
     """ """
 
@@ -389,7 +391,7 @@ class PermutationAugmentation(torch.nn.Module):
             perm_spec,
             tokensize,
             ignore_bn,
-            #num_threads=6,
+            # num_threads=6,
         )
         self.perms = perms
 
@@ -433,16 +435,20 @@ class PermutationAugmentation(torch.nn.Module):
 
 
 def precompute_permutations(
-    ref_checkpoint, permutation_number, perm_spec, tokensize, ignore_bn, #num_threads=6
+    ref_checkpoint,
+    permutation_number,
+    perm_spec,
+    tokensize,
+    ignore_bn,  # num_threads=6
 ):
-    #logging.info("start precomputing permutations")
+    # logging.info("start precomputing permutations")
     model_curr = ref_checkpoint
     # find permutation of model to itself as reference
     reference_permutation = weight_matching(
         ps=perm_spec, params_a=model_curr, params_b=model_curr
     )
 
-    #logging.info("get random permutation dicts")
+    # logging.info("get random permutation dicts")
     # compute random permutations
     permutation_dicts = []
     for ndx in range(permutation_number):
@@ -453,7 +459,7 @@ def precompute_permutations(
         # append to list of permutation dicts
         permutation_dicts.append(perm)
 
-    #logging.info("get permutation indices")
+    # logging.info("get permutation indices")
     """
         1: create reference tokenized checkpoints with two position indices
         - position of token in the sequence
@@ -496,27 +502,27 @@ def precompute_permutations(
     )
 
     # 3: apply permutations on checkpoints
-    #ray.init(num_cpus=num_threads)
-    #pb = ProgressBar(total=permutation_number)
-    #pb_actor = pb.actor
+    # ray.init(num_cpus=num_threads)
+    # pb = ProgressBar(total=permutation_number)
+    # pb_actor = pb.actor
     # get permutations
     permutations_global = []
     for perm_dict in permutation_dicts:
-        #perm_curr_global = compute_single_perm.remote(
+        # perm_curr_global = compute_single_perm.remote(
         perm_curr_global = compute_single_perm(
             reference_checkpoint=ref_checkpoint_global,
             permutation_dict=perm_dict,
             perm_spec=perm_spec,
             tokensize=tokensize,
             ignore_bn=ignore_bn,
-            #pba=pb_actor,
+            # pba=pb_actor,
         )
 
         permutations_global.append(perm_curr_global)
 
-    #permutations_global = ray.get(permutations_global)
+    # permutations_global = ray.get(permutations_global)
 
-    #ray.shutdown()
+    # ray.shutdown()
 
     # cast to torch.int
     permutations_global = [perm_g.to(torch.int) for perm_g in permutations_global]
@@ -524,9 +530,13 @@ def precompute_permutations(
     return permutations_global, permutation_dicts
 
 
-#@ray.remote(num_returns=1)
+# @ray.remote(num_returns=1)
 def compute_single_perm(
-    reference_checkpoint, permutation_dict, perm_spec, tokensize, ignore_bn#, pba
+    reference_checkpoint,
+    permutation_dict,
+    perm_spec,
+    tokensize,
+    ignore_bn,  # , pba
 ):
     # copy reference checkpoint
     index_check = copy.deepcopy(reference_checkpoint)
@@ -542,7 +552,7 @@ def compute_single_perm(
         ignore_bn=ignore_bn,
     )
     # update counter
-    #pba.update.remote(1)
+    # pba.update.remote(1)
     # return list
     return index_perm
 
@@ -567,9 +577,11 @@ def permute_model_vector(wdx, idx_start, window, perm):
     # return tokens
     return wdx
 
+
 class PermutationSpec(NamedTuple):
     perm_to_axes: dict
     axes_to_perm: dict
+
 
 class CheckpointAugmentationPipeline(torch.nn.Module):
     """
@@ -771,8 +783,6 @@ class NumpyTransformation(torch.nn.Module):
         return (ddx, mdx, p, props)
 
 
-
-
 def apply_permutation(ps: PermutationSpec, perm, params):
     """Apply a `perm` to `params`."""
     return {k: get_permuted_param(ps, perm, k, params) for k in params.keys()}
@@ -791,9 +801,9 @@ def get_permuted_param(ps: PermutationSpec, perm, k: str, params, except_axis=No
             # New: catch cases, where axis don't match 1-1 (i.e, after flatten operation of output of several channels.)
             if not w.shape[axis] == perm[p].shape[0]:
                 # we have a missmatch between the axis we're trying to permute and the permutation map we're given
-                #logging.debug(
+                # logging.debug(
                 #    f"missmatch between w.shape[axis]: {w.shape[axis]} and permutation map {perm[p]} with {perm[p].shape[0]} entries"
-                #)
+                # )
                 # if entries of w can be devided by permutation map without rest -> infer block-wise permutation
                 if w.shape[axis] % perm[p].shape[0] == 0:
                     # create new index tensor as basis for permutation
@@ -809,9 +819,9 @@ def get_permuted_param(ps: PermutationSpec, perm, k: str, params, except_axis=No
                     # apply new permutation on w
                     w = torch.index_select(w, axis, perm_new.int())
                 else:
-                    #logging.error(
+                    # logging.error(
                     #    f"Missmatch between w of shape {w.shape} for permutation on axis {axis} with permutation map {perm[p]} could not be resolved."
-                    #)
+                    # )
                     raise NotImplementedError(
                         f"Missmatch between w of shape {w.shape} for permutation on axis {axis} with permutation map {perm[p]} could not be resolved."
                     )
@@ -821,6 +831,7 @@ def get_permuted_param(ps: PermutationSpec, perm, k: str, params, except_axis=No
                 w = torch.index_select(w, axis, perm[p].int())
 
     return w
+
 
 def weight_matching(
     ps: PermutationSpec, params_a, params_b, max_iter=100, init_perm=None
@@ -844,10 +855,10 @@ def weight_matching(
             n = perm_sizes[p]
             A = torch.zeros((n, n))
             for wk, axis in ps.perm_to_axes[p]:
-                #logging.debug(f"layer {wk} - axis {axis}")
+                # logging.debug(f"layer {wk} - axis {axis}")
                 w_a = params_a[wk]
                 w_b = get_permuted_param(ps, perm, wk, params_b, except_axis=axis)
-                #logging.debug(f"w_a.shape: {w_a.shape} - w_b.shape:{w_b.shape}")
+                # logging.debug(f"w_a.shape: {w_a.shape} - w_b.shape:{w_b.shape}")
                 w_a = torch.moveaxis(w_a, axis, 0).reshape((n, -1))
                 w_b = torch.moveaxis(w_b, axis, 0).reshape((n, -1))
 
@@ -857,7 +868,7 @@ def weight_matching(
             assert (torch.tensor(ri) == torch.arange(len(ri))).all()
             oldL = torch.einsum("ij,ij->i", A, torch.eye(n)[perm[p].long()]).sum()
             newL = torch.einsum("ij,ij->i", A, torch.eye(n)[ci, :]).sum()
-            #logging.debug(f"{iteration}/{p}: {newL - oldL}")
+            # logging.debug(f"{iteration}/{p}: {newL - oldL}")
             progress = progress or newL > oldL + 1e-12
 
             perm[p] = torch.Tensor(ci)

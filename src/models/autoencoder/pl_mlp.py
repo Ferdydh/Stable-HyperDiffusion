@@ -7,7 +7,7 @@ import torch.nn as nn
 
 from src.core.config import MLPExperimentConfig, MLPModelConfig
 from src.data.inr import INR
-from src.models.utils import log_original_image, log_reconstructed_image
+from src.models.utils import flattened_weights_to_image_dict
 
 
 class Encoder(nn.Module):
@@ -16,10 +16,10 @@ class Encoder(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(config.input_dim, config.hidden_dim),
             nn.BatchNorm1d(config.hidden_dim),
-            self.activation_func,	
+            config.activation(),
             nn.Linear(config.hidden_dim, config.hidden_dim),
             nn.BatchNorm1d(config.hidden_dim),
-            self.activation_func,
+            config.activation(),
             nn.Linear(config.hidden_dim, config.z_dim),
         )
 
@@ -33,10 +33,10 @@ class Decoder(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(config.z_dim, config.hidden_dim),
             nn.BatchNorm1d(config.hidden_dim),
-            self.activation_func,
+            config.activation(),
             nn.Linear(config.hidden_dim, config.hidden_dim),
             nn.BatchNorm1d(config.hidden_dim),
-            self.activation_func,
+            config.activation(),
             nn.Linear(config.hidden_dim, config.output_dim),
         )
 
@@ -74,16 +74,32 @@ class Autoencoder(pl.LightningModule):
         """Setup fixed validation and training samples for visualization."""
         num_samples = self.config.logging.num_samples_to_visualize
 
+        val_num_samples = (
+            num_samples
+            if num_samples < len(self.trainer.val_dataloaders.dataset)
+            else len(self.trainer.val_dataloaders.dataset)
+        )
+
+        train_num_samples = (
+            num_samples
+            if num_samples < len(self.trainer.train_dataloader.dataset)
+            else len(self.trainer.train_dataloader.dataset)
+        )
+
         self.fixed_val_samples = torch.stack(
-            [self.trainer.val_dataloaders.dataset[i] for i in range(num_samples)]
+            [self.trainer.val_dataloaders.dataset[i] for i in range(val_num_samples)]
         ).to(self.device)
 
         self.fixed_train_samples = torch.stack(
-            [self.trainer.train_dataloader.dataset[i] for i in range(num_samples)]
+            [self.trainer.train_dataloader.dataset[i] for i in range(train_num_samples)]
         ).to(self.device)
 
-        v = log_original_image(self.fixed_val_samples, self.demo_inr, "val")
-        t = log_original_image(self.fixed_train_samples, self.demo_inr, "train")
+        v = flattened_weights_to_image_dict(
+            self.fixed_val_samples, self.demo_inr, "val/original", self.device
+        )
+        t = flattened_weights_to_image_dict(
+            self.fixed_train_samples, self.demo_inr, "train/original", self.device
+        )
 
         self.logger.experiment.log(v)
         self.logger.experiment.log(t)
@@ -118,10 +134,10 @@ class Autoencoder(pl.LightningModule):
             reconstructions = self.forward(samples)
 
         # Create and log visualizations
-        vis_dict = log_reconstructed_image(
+        vis_dict = flattened_weights_to_image_dict(
             reconstructions,
             self.demo_inr,
-            prefix,
+            f"{prefix}/reconstruction",
         )
 
         # Add step to wandb log
@@ -130,6 +146,9 @@ class Autoencoder(pl.LightningModule):
 
     def training_step(self, batch, batch_idx: int) -> Tensor:
         # Forward pass
+
+        print("batch.shape", batch.shape)
+        print(batch)
         reconstructions = self.forward(batch)
         loss, log_dict = self.compute_loss(batch, reconstructions, prefix="train")
 

@@ -120,7 +120,7 @@ class DataConfig:
     batch_size: int = 32
     num_workers: int = 4
     sample_limit: Optional[int] = None
-    split_ratio: Tuple[int, int, int] = (80, 10, 10)
+    split_ratio: float = 0.9  # Train-Val split ratio of 90-10%
 
     @classmethod
     def sanity(cls) -> "DataConfig":

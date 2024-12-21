@@ -2,56 +2,29 @@ from matplotlib import pyplot as plt
 from torch import Tensor
 import wandb
 
-from src.core.config import get_device
-from src.core.utils import plot_image
+from src.core.visualize import plot_image
 from src.data.inr import INR
-from src.data.utils import flattened_weights_to_weights
+from src.data.data_converter import flattened_weights_to_weights
 
 
-# TODO: right now we take in flattened weights, but we should take in the original weights
-def log_reconstructed_image(
-    reconstructions: Tensor,
-    inr_model: INR,
-    prefix: str,
-    device
+def flattened_weights_to_image_dict(
+    weights: Tensor, inr_model: INR, prefix, device
 ) -> dict:
-    """Log reconstructed image from flattened to wandb."""
+    weights = [flattened_weights_to_weights(w, inr_model) for w in weights]
+
+    return weights_to_image_dict(weights, inr_model, prefix, device)
+
+
+def weights_to_image_dict(weights: Tensor, inr_model: INR, prefix, device):
     result_dict = {}
 
     # Create visualizations for each pair
-    for i, recon in enumerate(reconstructions):
-        # Generate figures
-        #weights = flattened_weights_to_weights(recon, inr_model)
+    for i, recon in enumerate(weights):
         inr_model.load_state_dict(recon)
         recon_fig = plot_image(inr_model, device)
 
-        result_dict[f"{prefix}/reconstruction_{i}"] = wandb.Image(recon_fig)
+        result_dict[f"{prefix}/{i}"] = wandb.Image(recon_fig)
 
         plt.close(recon_fig)
-
-    return result_dict
-
-
-# TODO: right now we take in flattened weights, but we should take in the original weights
-def log_original_image(
-    originals: Tensor,
-    inr_model: INR,
-    prefix: str,
-    device
-) -> dict:
-    """Log original image to wandb."""
-    result_dict = {}
-
-    for i, orig in enumerate(originals):
-        # Generate figure
-        #weights = flattened_weights_to_weights(orig, inr_model)
-        inr_model.load_state_dict(orig)
-        original_fig = plot_image(inr_model, device)
-
-        # Add to result dictionary with unique keys
-        result_dict[f"{prefix}/original_{i}"] = wandb.Image(original_fig)
-
-    # Close figure
-    plt.close(original_fig)
 
     return result_dict

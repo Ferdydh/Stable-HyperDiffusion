@@ -7,12 +7,14 @@ import torch.nn as nn
 import math
 
 from src.core.config import TransformerExperimentConfig
-from src.models.utils import log_original_image, log_reconstructed_image
-from src.data.utils import tokens_to_weights, weights_to_tokens
+from src.models.utils import (
+    weights_to_image_dict,
+)
+from data.data_converter import tokens_to_weights
 from src.models.autoencoder.losses import GammaContrastReconLoss
 from src.models.autoencoder.transformer import Encoder, Decoder, ProjectionHead
 from src.data.inr import INR
-from src.data.augmentations import(
+from src.data.augmentations import (
     AugmentationPipeline,
     TwoViewSplit,
     WindowCutter,
@@ -111,65 +113,87 @@ class Autoencoder(pl.LightningModule):
         """Setup fixed validation and training samples for visualization."""
         num_samples = self.config.logging.num_samples_to_visualize
 
-        if len(self.trainer.val_dataloaders.dataset) < num_samples or len(self.trainer.train_dataloader.dataset) < num_samples:
+        if (
+            len(self.trainer.val_dataloaders.dataset) < num_samples
+            or len(self.trainer.train_dataloader.dataset) < num_samples
+        ):
             raise ValueError(
                 f"Number of samples to visualize ({num_samples}) is greater than the number of samples in the dataset ({len(self.trainer.val_dataloaders.dataset)})."
             )
 
-        self.fixed_val_samples = [self.trainer.val_dataloaders.dataset.get_state_dict(i) for i in range(num_samples)]
+        self.fixed_val_samples = [
+            self.trainer.val_dataloaders.dataset.get_state_dict(i)
+            for i in range(num_samples)
+        ]
 
-        self.fixed_train_samples = [self.trainer.train_dataloader.dataset.get_state_dict(i) for i in range(num_samples)]
+        self.fixed_train_samples = [
+            self.trainer.train_dataloader.dataset.get_state_dict(i)
+            for i in range(num_samples)
+        ]
 
-        # TODO: so this is the tokenized version of the weights
-        # FIXME
-        v = log_original_image(self.fixed_val_samples, self.demo_inr, "val", self.device)
-        t = log_original_image(self.fixed_train_samples, self.demo_inr, "train", self.device)
+        v = weights_to_image_dict(
+            self.fixed_val_samples, self.demo_inr, "val/original", self.device
+        )
+        t = weights_to_image_dict(
+            self.fixed_train_samples, self.demo_inr, "train/original", self.device
+        )
 
         self.logger.experiment.log(v)
         self.logger.experiment.log(t)
-    
 
     def setup_transformations(self):
-         # set windowsize
+        # set windowsize
         windowsize = self.config.model.window_size
         # TRAIN AUGMENTATIONS
         stack_1 = []
-        #if config.get("trainset::add_noise_view_1", 0.0) > 0.0:
+        # if config.get("trainset::add_noise_view_1", 0.0) > 0.0:
         #    stack_1.append(NoiseAugmentation(config.get("trainset::add_noise_view_1", 0.0)))
         if self.config.augmentations.add_noise_view_1_train > 0.0:
-            stack_1.append(NoiseAugmentation(self.config.augmentations.add_noise_view_1_train))
-        #if config.get("trainset::erase_augment", None) is not None:
+            stack_1.append(
+                NoiseAugmentation(self.config.augmentations.add_noise_view_1_train)
+            )
+        # if config.get("trainset::erase_augment", None) is not None:
         #    stack_1.append(ErasingAugmentation(**config["trainset::erase_augment"]))
         if self.config.augmentations.erase_augment_view_1_train is not None:
-            stack_1.append(ErasingAugmentation(self.config.augmentations.erase_augment_view_1_train))
+            stack_1.append(
+                ErasingAugmentation(
+                    self.config.augmentations.erase_augment_view_1_train
+                )
+            )
         stack_2 = []
-        #if config.get("trainset::add_noise_view_2", 0.0) > 0.0:
+        # if config.get("trainset::add_noise_view_2", 0.0) > 0.0:
         #    stack_2.append(NoiseAugmentation(config.get("trainset::add_noise_view_2", 0.0)))
         if self.config.augmentations.add_noise_view_2_train > 0.0:
-            stack_2.append(NoiseAugmentation(self.config.augmentations.add_noise_view_2_train))
-        #if config.get("trainset::erase_augment", None) is not None:
+            stack_2.append(
+                NoiseAugmentation(self.config.augmentations.add_noise_view_2_train)
+            )
+        # if config.get("trainset::erase_augment", None) is not None:
         #    stack_2.append(ErasingAugmentation(**config["trainset::erase_augment"]))
         if self.config.augmentations.erase_augment_view_2_train is not None:
-            stack_2.append(ErasingAugmentation(self.config.augmentations.erase_augment_view_2_train))
+            stack_2.append(
+                ErasingAugmentation(
+                    self.config.augmentations.erase_augment_view_2_train
+                )
+            )
 
         stack_train = []
-        #if config.get("trainset::multi_windows", None):
+        # if config.get("trainset::multi_windows", None):
         #   stack_train.append(StackBatches())
         if self.config.augmentations.multi_windows_train:
             stack_train.append(StackBatches())
         else:
             stack_train.append(WindowCutter(windowsize=windowsize))
         # put train stack together
-        #if config.get("training::permutation_number", 0) == 0:
+        # if config.get("training::permutation_number", 0) == 0:
         if self.config.augmentations.permutation_number_train == 0:
             split_mode = "copy"
             view_1_canon = True
             view_2_canon = True
         else:
             split_mode = "permutation"
-            #view_1_canon = config.get("training::view_1_canon", True)
+            # view_1_canon = config.get("training::view_1_canon", True)
             view_1_canon = self.config.augmentations.view_1_canon_train
-            #view_2_canon = config.get("training::view_2_canon", False)
+            # view_2_canon = config.get("training::view_2_canon", False)
             view_2_canon = self.config.augmentations.view_2_canon_train
         stack_train.append(
             TwoViewSplit(
@@ -185,41 +209,49 @@ class Autoencoder(pl.LightningModule):
 
         # test AUGMENTATIONS
         stack_1 = []
-        #if config.get("testset::add_noise_view_1", 0.0) > 0.0:
+        # if config.get("testset::add_noise_view_1", 0.0) > 0.0:
         #    stack_1.append(NoiseAugmentation(config.get("testset::add_noise_view_1", 0.0)))
         if self.config.augmentations.add_noise_view_1_val > 0.0:
-            stack_1.append(NoiseAugmentation(self.config.augmentations.add_noise_view_1_val))
-        #if config.get("testset::erase_augment", None) is not None:
+            stack_1.append(
+                NoiseAugmentation(self.config.augmentations.add_noise_view_1_val)
+            )
+        # if config.get("testset::erase_augment", None) is not None:
         #    stack_1.append(ErasingAugmentation(**config["testset::erase_augment"]))
         if self.config.augmentations.erase_augment_view_1_val is not None:
-            stack_1.append(ErasingAugmentation(self.config.augmentations.erase_augment_view_1_val))
+            stack_1.append(
+                ErasingAugmentation(self.config.augmentations.erase_augment_view_1_val)
+            )
         stack_2 = []
-        #if config.get("testset::add_noise_view_2", 0.0) > 0.0:
+        # if config.get("testset::add_noise_view_2", 0.0) > 0.0:
         #    stack_2.append(NoiseAugmentation(config.get("testset::add_noise_view_2", 0.0)))
         if self.config.augmentations.add_noise_view_2_val > 0.0:
-            stack_2.append(NoiseAugmentation(self.config.augmentations.add_noise_view_2_val))
-        #if config.get("testset::erase_augment", None) is not None:
+            stack_2.append(
+                NoiseAugmentation(self.config.augmentations.add_noise_view_2_val)
+            )
+        # if config.get("testset::erase_augment", None) is not None:
         #    stack_2.append(ErasingAugmentation(**config["testset::erase_augment"]))
         if self.config.augmentations.erase_augment_view_2_val is not None:
-            stack_2.append(ErasingAugmentation(self.config.augmentations.erase_augment_view_2_val))
+            stack_2.append(
+                ErasingAugmentation(self.config.augmentations.erase_augment_view_2_val)
+            )
 
         stack_test = []
-        #if config.get("trainset::multi_windows", None):
+        # if config.get("trainset::multi_windows", None):
         if self.config.augmentations.multi_windows_train:
             stack_test.append(StackBatches())
         else:
             stack_test.append(WindowCutter(windowsize=windowsize))
         # put together
-        #if config.get("testing::permutation_number", 0) == 0:
+        # if config.get("testing::permutation_number", 0) == 0:
         if self.config.augmentations.permutation_number_val == 0:
             split_mode = "copy"
             view_1_canon = True
             view_2_canon = True
         else:
             split_mode = "permutation"
-            #view_1_canon = config.get("testing::view_1_canon", True)
+            # view_1_canon = config.get("testing::view_1_canon", True)
             view_1_canon = self.config.augmentations.view_1_canon_val
-            #view_2_canon = config.get("testing::view_2_canon", False)
+            # view_2_canon = config.get("testing::view_2_canon", False)
             view_2_canon = self.config.augmentations.view_2_canon_val
         stack_test.append(
             TwoViewSplit(
@@ -235,7 +267,7 @@ class Autoencoder(pl.LightningModule):
         trafo_test = AugmentationPipeline(stack=stack_test)
 
         # downstream task permutation (chose which permutationn to use for dstk)
-        #if config.get("training::permutation_number", 0) > 0:
+        # if config.get("training::permutation_number", 0) > 0:
         if self.config.augmentations.permutation_number_train > 0:
             trafo_dst = PermutationSelector(mode="canonical", keep_properties=True)
         else:
@@ -244,7 +276,6 @@ class Autoencoder(pl.LightningModule):
         self.train_transforms = trafo_train
         self.val_transforms = trafo_test
         self.dst_transform = trafo_dst
-    
 
     def forward(
         self,
@@ -304,16 +335,22 @@ class Autoencoder(pl.LightningModule):
     # FIXME adjust
     def visualize_reconstructions(self, prefix: str, batch_idx: int):
         """Visualize reconstructions and log them."""
-        if batch_idx % self.config.logging.log_every_n_steps != 0 or self.current_epoch == 0:
+        if (
+            batch_idx % self.config.logging.log_every_n_steps != 0
+            or self.current_epoch == 0
+        ):
             return
 
         with torch.no_grad():
-
             num_samples = self.config.logging.num_samples_to_visualize
             if prefix == "train":
-                samples = [self.trainer.train_dataloader.dataset[i] for i in range(num_samples)]
+                samples = [
+                    self.trainer.train_dataloader.dataset[i] for i in range(num_samples)
+                ]
             else:
-                samples = [self.trainer.val_dataloaders.dataset[i] for i in range(num_samples)]
+                samples = [
+                    self.trainer.val_dataloaders.dataset[i] for i in range(num_samples)
+                ]
 
             # Process batch
             tokens, masks, positions = zip(*samples)
@@ -325,31 +362,33 @@ class Autoencoder(pl.LightningModule):
 
             latent, reconstructed, _ = self.forward(tokens, positions)
 
-            reference_checkpoint = self.trainer.val_dataloaders.dataset.get_state_dict(0)
+            reference_checkpoint = self.trainer.val_dataloaders.dataset.get_state_dict(
+                0
+            )
 
             reconstructions = [
                 tokens_to_weights(t, p, reference_checkpoint)
                 for t, p in zip(reconstructed, positions)
             ]
 
-            #step_key = f"{prefix}_step_{self.global_step}"
-            #self.fixed_sample_reconstructions[step_key] = reconstructions
+            # step_key = f"{prefix}_step_{self.global_step}"
+            # self.fixed_sample_reconstructions[step_key] = reconstructions
 
-            vis_dict = log_reconstructed_image(
-                #samples,
+            vis_dict = weights_to_image_dict(
+                # samples,
                 reconstructions,
                 self.demo_inr,
-                prefix,
-                #batch_idx,
-                #self.global_step,
-                #is_fixed=True,
-                self.device
+                f"{prefix}/reconstruction",
+                # batch_idx,
+                # self.global_step,
+                # is_fixed=True,
+                self.device,
             )
             vis_dict["global_step"] = self.global_step
             self.logger.experiment.log(vis_dict)
 
     # FIXME No longer needed
-    #def _process_batch(self, batch: List[Tensor]) -> Tuple[Tensor, Tensor, Tensor]:
+    # def _process_batch(self, batch: List[Tensor]) -> Tuple[Tensor, Tensor, Tensor]:
     #    """Convert batch to required tensor format."""
     #    tokens, masks, positions = zip(
     #        *[weights_to_tokens(b, tokensize=0, device=self.device) for b in batch]
@@ -372,10 +411,8 @@ class Autoencoder(pl.LightningModule):
             torch.stack(positions).to(torch.int32),
         )
 
-        # Get transformed versions 
-        transformed = self.train_transforms(
-            tokens, masks, positions
-        )
+        # Get transformed versions
+        transformed = self.train_transforms(tokens, masks, positions)
 
         tokens_i, masks_i, positions_i = tokens, masks, positions
         tokens_j, masks_j, positions_j = transformed[0], transformed[1], transformed[2]
@@ -398,9 +435,9 @@ class Autoencoder(pl.LightningModule):
         self.log_dict(log_dict, prog_bar=True, sync_dist=True)
 
         if batch_idx % self.config.trainer.log_every_n_steps == 0:
-            #self.visualize_reconstructions(
+            # self.visualize_reconstructions(
             #    batch, "train", batch_idx
-            #)
+            # )
             self.visualize_reconstructions("train", batch_idx)
 
         # Log gradient norm
@@ -428,14 +465,12 @@ class Autoencoder(pl.LightningModule):
             torch.stack(positions).to(torch.int32),
         )
 
-        # Get transformed versions 
-        transformed = self.val_transforms(
-            *[tokens, masks, positions]
-        )
-        #print("Tokens:",tokens.shape)
-        #print("Masks:",masks.shape)
-        #print("Positions:",positions.shape)
-        #for x in transformed:
+        # Get transformed versions
+        transformed = self.val_transforms(*[tokens, masks, positions])
+        # print("Tokens:",tokens.shape)
+        # print("Masks:",masks.shape)
+        # print("Positions:",positions.shape)
+        # for x in transformed:
         #    print(x.shape)
         tokens_i, masks_i, positions_i = transformed[0], transformed[1], transformed[2]
         tokens_j, masks_j, positions_j = transformed[3], transformed[4], transformed[5]
@@ -448,7 +483,7 @@ class Autoencoder(pl.LightningModule):
         transform_output_j = self.forward(tokens_j, positions_j)
 
         # Compute loss
-        val_loss, val_log_dict  = self.compute_loss(
+        val_loss, val_log_dict = self.compute_loss(
             transform_output_i,
             transform_output_j,
             tokens_i,
@@ -458,7 +493,6 @@ class Autoencoder(pl.LightningModule):
             prefix="val",
         )
 
-        
         # Log validation metrics
         self.log_dict(val_log_dict, prog_bar=True, sync_dist=True)
 
