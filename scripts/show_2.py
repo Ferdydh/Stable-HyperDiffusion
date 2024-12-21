@@ -1,5 +1,5 @@
 from matplotlib import pyplot as plt
-from src.core.utils import plot_image
+from core.visualize import plot_image
 from src.data.inr import INR
 from src.data.inr_dataset import (
     DataHandler,
