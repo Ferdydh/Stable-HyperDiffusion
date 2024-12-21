@@ -19,14 +19,13 @@
 ## Getting Started
 
 1. Place your dataset in the `mnist-inrs` directory at the project root
-2. Create and activate conda environment:
+2. Use uv to install :
    ```bash
-   conda env create -f environment.yaml
-   conda activate lhdm
+   uv venv
+   uv pip install -e .
    ```
 
-Save with this
-conda env export --no-builds > environment.yaml
+Save with this`uv add your_package`
 
 ## Dataset Information
 

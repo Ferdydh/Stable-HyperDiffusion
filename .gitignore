@@ -1,12 +1,16 @@
-02691156_2048_pc
-3d_128_plane_multires_4_manifoldplus_slower_no_clipgrad
-ckpt
-mnist-inrs
+# Project structure related
+/logs
+/data
+/mnist-inrs
 *.zip
+*.egg-info
+
+
+# Python
 __pycache__
 *.pyc
-.vscode
-lightning_logs
-wandb
-temp.png
-checkpoints
+.DS_Store
+/.venv
+
+# vscode
+/.vscode

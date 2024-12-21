@@ -1,0 +1,14 @@
+[project]
+name = "acv"
+version = "0.1.0"
+description = "Cool machine learning!"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "einops>=0.8.0",
+    "matplotlib>=3.10.0",
+    "pytorch-lightning>=2.5.0.post0",
+    "random-fourier-features-pytorch>=1.0.1",
+    "torch>=2.5.1",
+    "wandb>=0.19.1",
+]

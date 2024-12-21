@@ -7,10 +7,6 @@ from src.data.inr_dataset import (
 
 from src.core.config import DataSelector, DatasetType, MLPExperimentConfig
 
-import matplotlib
-
-matplotlib.use("TkAgg")
-
 
 if __name__ == "__main__":
     config = MLPExperimentConfig.default()
