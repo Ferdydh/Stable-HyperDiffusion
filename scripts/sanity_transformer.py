@@ -4,7 +4,7 @@ from src.core.train import train
 
 if __name__ == "__main__":
     config: TransformerExperimentConfig = TransformerExperimentConfig.default()
-    config.data = DataConfig.sanity(False)
+    config.data = DataConfig.sanity()
     config.early_stopping.min_delta = 1e-4
     config.early_stopping.patience = 30
     config.trainer.max_epochs = 300

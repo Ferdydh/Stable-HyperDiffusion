@@ -5,6 +5,9 @@ from typing import List, Optional, Tuple, Literal, Union
 import torch
 
 
+DATA_PATH = "mnist-inrs"
+
+
 class DatasetType(Enum):
     MNIST = "mnist"
     CIFAR10 = "cifar10"
@@ -47,12 +50,6 @@ class DataSelector:
 
 def get_device() -> torch.device:
     return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-
-# Constants
-class DataPaths:
-    FERDY = "mnist-inrs"
-    SIMON = "../acv_use_this/src/data/mnist-inrs"
 
 
 # Base Configs
@@ -126,10 +123,9 @@ class DataConfig:
     split_ratio: Tuple[int, int, int] = (80, 10, 10)
 
     @classmethod
-    def sanity(cls, is_simon: bool) -> "DataConfig":
-        base_path = DataPaths.SIMON if is_simon else DataPaths.FERDY
+    def sanity(cls) -> "DataConfig":
         return cls(
-            data_path=base_path,
+            data_path=DATA_PATH,
             selector=DataSelector(
                 dataset_type=DatasetType.MNIST, class_label=2, sample_id=1096
             ),
@@ -138,20 +134,18 @@ class DataConfig:
         )
 
     @classmethod
-    def small(cls, is_simon: bool) -> "DataConfig":
-        base_path = DataPaths.SIMON if is_simon else DataPaths.FERDY
+    def small(cls) -> "DataConfig":
         return cls(
-            data_path=base_path,
+            data_path=DATA_PATH,
             selector=DataSelector(dataset_type=DatasetType.MNIST, class_label=2),
             batch_size=2,
             sample_limit=2,
         )
 
     @classmethod
-    def full(cls, is_simon: bool) -> "DataConfig":
-        base_path = DataPaths.SIMON if is_simon else DataPaths.FERDY
+    def full(cls) -> "DataConfig":
         return cls(
-            data_path=base_path,
+            data_path=DATA_PATH,
             selector=DataSelector(dataset_type=DatasetType.MNIST, class_label=2),
             batch_size=32,
         )
@@ -320,7 +314,6 @@ class TrainingConfig:
         )
 
 
-
 @dataclass
 class AugmentationConfig:
     """Contrastive learning configuration for transformer"""
@@ -344,23 +337,22 @@ class AugmentationConfig:
     @classmethod
     def default(cls) -> "AugmentationConfig":
         return cls(
-            permutation_number_train = 5,
-            permutation_number_val = 5,
-            view_1_canon_train = False,
-            view_1_canon_val = True,
-            view_2_canon_train = True,
-            view_2_canon_val = False,
-            add_noise_view_1_train = 0.1,
-            add_noise_view_1_val = 0.0,
-            add_noise_view_2_train = 0.1,
-            add_noise_view_2_val = 0.0,           
-            erase_augment_view_1_train = None,
-            erase_augment_view_2_train = None,
-            erase_augment_view_1_val = None,
-            erase_augment_view_2_val = None,
-            multi_windows_train = None
+            permutation_number_train=5,
+            permutation_number_val=5,
+            view_1_canon_train=False,
+            view_1_canon_val=True,
+            view_2_canon_train=True,
+            view_2_canon_val=False,
+            add_noise_view_1_train=0.1,
+            add_noise_view_1_val=0.0,
+            add_noise_view_2_train=0.1,
+            add_noise_view_2_val=0.0,
+            erase_augment_view_1_train=None,
+            erase_augment_view_2_train=None,
+            erase_augment_view_1_val=None,
+            erase_augment_view_2_val=None,
+            multi_windows_train=None,
         )
-
 
 
 @dataclass
@@ -383,9 +375,9 @@ class MLPExperimentConfig(BaseExperimentConfig):
     model: MLPModelConfig
 
     @classmethod
-    def default(cls, is_simon: bool = False) -> "MLPExperimentConfig":
+    def default(cls) -> "MLPExperimentConfig":
         return cls(
-            data=DataConfig.sanity(is_simon),
+            data=DataConfig.sanity(),
             model=MLPModelConfig.default(),
             optimizer=OptimizerConfig.default(),
             scheduler=SchedulerConfig.cosine_default(),
@@ -404,9 +396,9 @@ class TransformerExperimentConfig(BaseExperimentConfig):
     training: TrainingConfig
 
     @classmethod
-    def default(cls, is_simon: bool = False) -> "TransformerExperimentConfig":
+    def default(cls) -> "TransformerExperimentConfig":
         return cls(
-            data=DataConfig.sanity(is_simon),
+            data=DataConfig.sanity(),
             model=TransformerModelConfig.default(),
             training=TrainingConfig.default(),
             optimizer=OptimizerConfig.default(),
