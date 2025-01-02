@@ -23,7 +23,8 @@ if __name__ == "__main__":
     # config.model.num_layers = 4
     # config.model.num_layers = 16
     # config.model.d_model = 256  # 256 -> 4
-    # config.model.window_size = 16
+    # config.model.window_size = 65  # no window
+    config.model.window_size = 16
     config.data.batch_size = 8
 
     config.data.split_ratio = 0.8
@@ -39,8 +40,9 @@ if __name__ == "__main__":
 
     # Test for augmentations
     config.augmentations = AugmentationConfig.no_aug()
-    config.augmentations.apply_augmentations = True
-    config.early_stopping.patience = 50
+    # config.augmentations.apply_augmentations = True
+    # config.early_stopping.patience = 50
+    # config.augmentations.multi_windows_train = True
 
     # Initialize model
     model = pl_transformer.Autoencoder(config)

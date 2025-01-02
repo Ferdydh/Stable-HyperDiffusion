@@ -1,349 +1,190 @@
 import torch
-from torchvision.transforms import RandomErasing
 import random
+from typing import Tuple, Optional, List
+from torchvision.transforms import RandomErasing
+import einops
+from src.core.config import BaseExperimentConfig
 
 
-#############################################################################
-class AugmentationPipeline(torch.nn.Module):
-    """
-    Wrapper around a stack of augmentation modules
-    Handles passing data through stack, isolating properties
-    """
+def identity_transform(tensor, mask, pos):
+    """Identity transformation that returns two identical views."""
+    return tensor, mask, pos, tensor, mask, pos
 
-    def __init__(self, stack, keep_properties: bool = False):
-        """
-        passes stream of data through stack
-        """
-        super(AugmentationPipeline, self).__init__()
-        self.stack = stack
-        if keep_properties:
-            self.forward = self._forward_props
+
+def add_noise(
+    tensor: torch.Tensor, sigma: float = 0.1, multiplicative: bool = True
+) -> torch.Tensor:
+    """Add Gaussian noise to tensor."""
+    noise = torch.randn_like(tensor) * sigma
+    if multiplicative:
+        return tensor * (1.0 + noise)
+    return tensor + noise
+
+
+def apply_erasing(
+    tensor: torch.Tensor, p: float = 0.5, value: float = 0
+) -> torch.Tensor:
+    """Apply random erasing to tensor."""
+    erasing = RandomErasing(
+        p=p, scale=(0.02, 0.33), ratio=(0.3, 3.3), value=value, inplace=False
+    )
+    # Reshape for RandomErasing and back
+    tensor = einops.rearrange(
+        tensor, "b n d -> (b n) 1 d"
+    )  # b=batch, n=num_tokens, d=token_dim
+    tensor = erasing(tensor)
+    return einops.rearrange(tensor, "(b n) 1 d -> b n d")
+
+
+def cut_window(
+    tensor: torch.Tensor, mask: torch.Tensor, pos: torch.Tensor, window_size: int
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Cut a random window from the sequence."""
+    seq_len = tensor.shape[1]
+    start_idx = (
+        0 if seq_len == window_size else random.randint(0, seq_len - window_size)
+    )
+    end_idx = start_idx + window_size
+
+    # Use torch indexing to select window
+    return (
+        tensor[:, start_idx:end_idx, :],  # [batch, num_tokens, token_dim]
+        mask[:, start_idx:end_idx, :],  # [batch, num_tokens, token_dim]
+        pos[:, start_idx:end_idx, :],  # [batch, num_tokens, token_dim]
+    )
+
+
+def stack_batches(
+    tensor: torch.Tensor, mask: torch.Tensor, pos: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Stack batch dimension into sequence dimension."""
+    return (
+        einops.rearrange(
+            tensor, "b n d -> (b n) 1 d"
+        ),  # b=batch, n=num_tokens, d=token_dim
+        einops.rearrange(mask, "b n d -> (b n) 1 d"),
+        einops.rearrange(pos, "b n d -> (b n) 1 d"),
+    )
+
+
+def select_permutation(
+    tensor: torch.Tensor, mask: torch.Tensor, pos: torch.Tensor, canonical: bool = False
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Select either canonical (first) or random permutation of sequence."""
+    if canonical:
+        return tensor, mask, pos
+
+    # Generate random permutation indices for each batch
+    batch_size, seq_len, _ = tensor.shape
+    perm_idx = torch.stack(
+        [torch.randperm(seq_len, device=tensor.device) for _ in range(batch_size)]
+    )
+
+    # Create batch indices for advanced indexing
+    batch_idx = torch.arange(batch_size, device=tensor.device)[:, None]
+
+    # Use torch advanced indexing for permutation
+    return (
+        tensor[batch_idx, perm_idx],  # [batch, num_tokens, token_dim]
+        mask[batch_idx, perm_idx],  # [batch, num_tokens, token_dim]
+        pos[batch_idx, perm_idx],  # [batch, num_tokens, token_dim]
+    )
+
+
+def create_transform(
+    window_size: int,
+    multi_windows: bool,
+    noise_view1: float,
+    noise_view2: float,
+    erase_view1: Optional[float],
+    erase_view2: Optional[float],
+    use_permutation: bool,
+    view1_canonical: bool,
+    view2_canonical: bool,
+) -> callable:
+    """Create a transform function with the specified parameters."""
+
+    def transform(
+        tensor: torch.Tensor, mask: torch.Tensor, pos: torch.Tensor
+    ) -> Tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
+        # Apply window cutting or batch stacking
+        # if multi_windows:
+        #     tensor, mask, pos = stack_batches(tensor, mask, pos)
+        # else:
+        #     tensor, mask, pos = cut_window(tensor, mask, pos, window_size)
+
+        # Create two views through permutation or copying
+        if use_permutation:
+            tensor1, mask1, pos1 = select_permutation(
+                tensor, mask, pos, view1_canonical
+            )
+            tensor2, mask2, pos2 = select_permutation(
+                tensor, mask, pos, view2_canonical
+            )
         else:
-            self.forward = self._forward
+            tensor1, mask1, pos1 = tensor.clone(), mask.clone(), pos.clone()
+            tensor2, mask2, pos2 = tensor.clone(), mask.clone(), pos.clone()
 
-    def _forward(self, ddx, mdx, p, props=None):
-        # apply stack 1
-        out = (ddx, mdx, p)
-        for m in self.stack:
-            out = m(*out)
-        return out
+        # Apply noise augmentation
+        if noise_view1 > 0:
+            tensor1 = add_noise(tensor1, noise_view1)
+        if noise_view2 > 0:
+            tensor2 = add_noise(tensor2, noise_view2)
 
-    def _forward_props(self, ddx, mdx, p, props):
-        # apply stack 1
-        out = (ddx, mdx, p, props)
-        for m in self.stack:
-            out = m(*out)
-        return out
+        # Apply erasing augmentation
+        if erase_view1 is not None:
+            tensor1 = apply_erasing(tensor1, erase_view1)
+        if erase_view2 is not None:
+            tensor2 = apply_erasing(tensor2, erase_view2)
 
+        return tensor1, mask1, pos1, tensor2, mask2, pos2
 
-#############################################################################
-class TwoViewSplit(torch.nn.Module):
-    """ """
-
-    def __init__(
-        self,
-        stack_1,
-        stack_2,
-        mode: str = "copy",
-        view_1_canon: bool = True,
-        view_2_canon: bool = False,
-    ):
-        """
-        splits input stream of ddx, mask, p in two streams
-        passes two streams through stack_1, stack_2, respectively
-        if mode == "copy", then ddx, mask, p are cloned
-        if mode == "permutation", then mask, p are copied, ddx is sliced along first axis to get permuted versions
-        """
-        super(TwoViewSplit, self).__init__()
-        self.stack_1 = stack_1
-        self.stack_2 = stack_2
-
-        self.mode = mode
-        if self.mode == "copy":
-            self.forward = self._forward_copy
-        elif self.mode == "permutation":
-            self.forward = self._forward_permutation
-        else:
-            raise NotImplementedError(f"mode {self.mode} not implemented")
-
-        self.view_1_canon = view_1_canon
-        self.view_2_canon = view_2_canon
-
-    def _forward_copy(self, ddx1, mdx1, p1):
-        # clone ddx, mdx
-        ddx2, mdx2, p2 = (
-            ddx1.clone().to(ddx1.device),
-            mdx1.clone().to(ddx1.device),
-            p1.clone().to(ddx1.device),
-        )
-        # apply stack 1
-        for m in self.stack_1:
-            ddx1, mdx1, p1 = m(ddx1, mdx1, p1)
-        # apply stack 2
-        for m in self.stack_2:
-            ddx2, mdx2, p2 = m(ddx2, mdx2, p2)
-        return ddx1, mdx1, p1, ddx2, mdx2, p2
-
-    def _forward_permutation(self, ddx1, mdx1, p1):
-        # ddx.shape[-3] contains random permutations
-        # choose two out of those and slice
-        perm_ids = torch.randperm(
-            n=ddx1.shape[-3], dtype=torch.int32, device=ddx1.device
-        )[:2]
-        if self.view_1_canon == True:
-            perm_ids[0] = 0
-        if self.view_2_canon == True:
-            perm_ids[1] = 0
-        # slice+clone second sample first
-        # logging.debug(f"perm_ids: {perm_ids}")
-        ddx2 = (
-            torch.index_select(ddx1.clone(), -3, perm_ids[1]).squeeze().to(ddx1.device)
-        )
-        # slice / overwrite first sample
-        ddx1 = torch.index_select(ddx1, -3, perm_ids[0]).squeeze().to(ddx1.device)
-
-        # clone mdx, p
-        mdx2, p2 = mdx1.clone().to(ddx1.device), p1.clone().to(ddx1.device)
-
-        # apply stack 1
-        for m in self.stack_1:
-            ddx1, mdx1, p1 = m(ddx1, mdx1, p1)
-        # apply stack 2
-        for m in self.stack_2:
-            ddx2, mdx2, p2 = m(ddx2, mdx2, p2)
-        return ddx1, mdx1, p1, ddx2, mdx2, p2
+    return transform
 
 
-#############################################################################
-class PermutationSelector(torch.nn.Module):
-    """
-    ffcv batches use the first dimension to store random permutations of the same sample
-    at inference, these need to be separatered and a single version picked.
-    this module does that
-    """
+def setup_transformations(config: BaseExperimentConfig):
+    """Setup training, validation and downstream transforms based on config."""
+    if not config.augmentations.apply_augmentations:
+        return identity_transform, identity_transform, identity_transform
 
-    def __init__(
-        self,
-        mode: str = "identity",
-        keep_properties: bool = False,
-    ):
-        """
-        if mode == "random", then random permutation is chosen
-        if mode == "canonical", ddx[0] is chosen
-        """
-        super(PermutationSelector, self).__init__()
-        self.keep_properties = keep_properties
-        self.mode = mode
-        if self.mode == "random":
-            self.forward = self._forward_random
-        elif self.mode == "canonical":
-            self.forward = self._forward_canonical
-        elif self.mode == "identity":
-            self.forward = self._forward_identity
-        else:
-            raise NotImplementedError(f"mode {self.mode} not implemented")
+    # Training transforms
+    train_transform = create_transform(
+        window_size=config.model.window_size,
+        multi_windows=config.augmentations.multi_windows_train,
+        noise_view1=config.augmentations.add_noise_view_1_train,
+        noise_view2=config.augmentations.add_noise_view_2_train,
+        erase_view1=config.augmentations.erase_augment_view_1_train,
+        erase_view2=config.augmentations.erase_augment_view_2_train,
+        use_permutation=config.augmentations.permutation_number_train > 0,
+        view1_canonical=config.augmentations.view_1_canon_train,
+        view2_canonical=config.augmentations.view_2_canon_train,
+    )
 
-    def _return(self, ddx, mdx, p, props):
-        if self.keep_properties:
-            return ddx, mdx, p, props
-        else:
-            return ddx, mdx, p
+    # Validation transforms
+    val_transform = create_transform(
+        window_size=config.model.window_size,
+        multi_windows=config.augmentations.multi_windows_train,
+        noise_view1=config.augmentations.add_noise_view_1_val,
+        noise_view2=config.augmentations.add_noise_view_2_val,
+        erase_view1=config.augmentations.erase_augment_view_1_val,
+        erase_view2=config.augmentations.erase_augment_view_2_val,
+        use_permutation=config.augmentations.permutation_number_val > 0,
+        view1_canonical=config.augmentations.view_1_canon_val,
+        view2_canonical=config.augmentations.view_2_canon_val,
+    )
 
-    def _forward_canonical(self, ddx, mdx, p, props=None):
-        # ddx.shape[0] contains random permutations
-        # choose first out of those and slice
-        # ddx = ddx[0]
-        ddx = (
-            torch.index_select(ddx, -3, torch.tensor(0).to(torch.int32))
-            .squeeze()
-            .to(ddx.device)
-        )
-        return self._return(ddx, mdx, p, props)
+    # Downstream transform
+    def dst_transform(tensor: torch.Tensor, mask: torch.Tensor, pos: torch.Tensor):
+        """Simple transform that optionally selects canonical sequence."""
+        if config.augmentations.permutation_number_train > 0:
+            return select_permutation(tensor, mask, pos, canonical=True)
+        return tensor, mask, pos
 
-    def _forward_random(self, ddx, mdx, p, props=None):
-        # ddx.shape[0] contains random permutations
-        # choose one out of those and slice
-        # -3 is the index of permutations
-        perm_ids = torch.randperm(
-            n=ddx.shape[-3], dtype=torch.int32, device=ddx.device
-        )[:1]
-        # logging.debug(f"perm_ids: {perm_ids}")
-        # ddx = ddx[perm_ids[0]]
-        ddx = torch.index_select(ddx, -3, perm_ids[0]).squeeze().to(ddx.device)
-
-        return self._return(ddx, mdx, p, props)
-
-    def _forward_identity(self, ddx, mdx, p, props=None):
-        # pass through data without change
-        return self._return(ddx, mdx, p, props)
-
-
-#############################################################################
-class WindowCutter(torch.nn.Module):
-    """
-    cuts random window chunks out of sequence of tokens
-    Args:
-        windowsize: size of window
-    Returns:
-        ddx: torch.tensor sequence of weight/channel tokens
-        mdx: torch.tensor sequence of mask tokens
-        p: torch.tensor sequence of positions
-    """
-
-    def __init__(self, windowsize: int = 12, keep_properties: bool = False):
-        super(WindowCutter, self).__init__()
-        self.windowsize = windowsize
-        self.keep_properties = keep_properties
-
-    def forward(self, ddx, mdx, p, props=None):
-        """
-        #TODO
-        """
-        # get lenght of token sequence
-        max_len = ddx.shape[-2]
-        # sample start
-        if max_len == self.windowsize:
-            idx_start = 0
-        else:
-            idx_start = random.randint(0, max_len - self.windowsize)
-        idx_end = idx_start + self.windowsize
-
-        # get index tensor
-        idx = torch.arange(start=idx_start, end=idx_end, device=ddx.device)
-
-        # apply window
-        ddx = torch.index_select(ddx, -2, idx)
-        mdx = torch.index_select(mdx, -2, idx)
-        p = torch.index_select(p, -2, idx)
-
-        if self.keep_properties:
-            return ddx, mdx, p, props
-        return ddx, mdx, p
-
-
-#############################################################################
-class MultiWindowCutter(torch.nn.Module):
-    """
-    cuts k random window chunks out of one sample of sequence of tokens
-    Args:
-        windowsize: size of window
-        k: number of windows. k=1 is equivalent to WindowCutter. Rule of thumb can be: lenght of sequence / windowsize to get full coverage of sample
-    Returns:
-        ddx: torch.tensor sequence of weight/channel tokens
-        mdx: torch.tensor sequence of mask tokens
-        p: torch.tensor sequence of positions
-    """
-
-    def __init__(self, windowsize: int = 12, k: int = 10):
-        super(MultiWindowCutter, self).__init__()
-        self.windowsize = windowsize
-        self.k = k
-
-    def forward(self, ddx, mdx, p):
-        # get lenght of token sequence
-
-        # single sample case: match batch dimension
-        if len(ddx.shape) == 2:
-            ddx = ddx.unsqueeze(dim=0)
-            mdx = mdx.unsqueeze(dim=0)
-            p = p.unsqueeze(dim=0)
-
-        # get max index
-        max_idx = ddx.shape[1] - self.windowsize + 1
-
-        # draw k random start indices
-        idx_starts = torch.randint(0, max_idx, (self.k,))
-
-        # apply slicing
-        ddx = [
-            ddx[:, idx_start : idx_start + self.windowsize, :]
-            for idx_start in idx_starts
-        ]
-        mdx = [
-            mdx[:, idx_start : idx_start + self.windowsize, :]
-            for idx_start in idx_starts
-        ]
-        p = [
-            p[:, idx_start : idx_start + self.windowsize, :] for idx_start in idx_starts
-        ]
-
-        # cat along batch dimension
-        ddx = torch.cat(ddx, dim=0)
-        mdx = torch.cat(mdx, dim=0)
-        p = torch.cat(p, dim=0)
-
-        # return
-        return ddx, mdx, p
-
-
-class StackBatches(torch.nn.Module):
-    """
-    stack batches from multi-window cutter to regular batches
-    """
-
-    def __init__(
-        self,
-    ):
-        super(StackBatches, self).__init__()
-
-    def forward(self, ddx, mdx, p):
-        # stack along first two dimensions
-        ddx = ddx.view((ddx.shape[0] * ddx.shape[1], ddx.shape[2], ddx.shape[3]))
-        mdx = mdx.view((mdx.shape[0] * mdx.shape[1], mdx.shape[2], mdx.shape[3]))
-        p = p.view((p.shape[0] * p.shape[1], p.shape[2], p.shape[3]))
-        return ddx, mdx, p
-
-
-#############################################################################
-class ErasingAugmentation(torch.nn.Module):
-    """
-    #TODO
-    """
-
-    def __init__(
-        self,
-        p: float = 0.5,
-        scale: tuple = (0.02, 0.33),
-        ratio: tuple = (0.3, 3.3),
-        value=0,
-    ):
-        super(ErasingAugmentation, self).__init__()
-        self.re = RandomErasing(
-            p=p, scale=scale, ratio=ratio, value=value, inplace=True
-        )
-
-    def forward(self, ddx, mdx, p):
-        """
-        #TODO
-        """
-        # unsquezee along channel dimension to match torch random erasing logic
-        ddx = ddx.unsqueeze(dim=-3)
-        # apply inplace erasing
-        self.re(ddx)
-        # squeeze back again
-        ddx = ddx.squeeze()
-        return ddx, mdx, p
-
-
-#############################################################################
-class NoiseAugmentation(torch.nn.Module):
-    """ """
-
-    def __init__(self, sigma: float = 0.1, multiplicative_noise: bool = True):
-        super(NoiseAugmentation, self).__init__()
-        self.sigma = sigma
-        if multiplicative_noise:
-            self.forward = self._forward_multiplicative
-        else:
-            self.forward = self._forward_additive
-
-    def _forward_multiplicative(self, ddx, mdx, p):
-        ddx = ddx * (1.0 + self.sigma * torch.randn(ddx.shape, device=ddx.device))
-        return ddx, mdx, p
-
-    def _forward_additive(self, ddx, mdx, p):
-        ddx = ddx + self.sigma * torch.randn(ddx.shape, device=ddx.device)
-        return ddx, mdx, p
-
-
-#############################################################################
+    return train_transform, val_transform, dst_transform
