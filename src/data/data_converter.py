@@ -167,13 +167,13 @@ def weights_to_tokens(
     pos = [(ndx, idx, jdx) for ndx, (idx, jdx) in enumerate(pos)]
     pos = torch.tensor(pos, dtype=torch.int32)
     # cast tensor to int16
-    if pos.max() > 32767:
-        logging.debug(
-            f"max position value of {pos.max()} does not fit into torch.int16 range. Change data type"
-        )
-        pos = pos.to(torch.int)
-    else:
-        pos = pos.to(torch.int16)
+    # if pos.max() > 32767:
+    #     logging.debug(
+    #         f"max position value of {pos.max()} does not fit into torch.int16 range. Change data type"
+    #     )
+    #     pos = pos.to(torch.int)
+    # else:
+    #     pos = pos.to(torch.int16)
     if device:
         pos.to(device)
     if return_mask:

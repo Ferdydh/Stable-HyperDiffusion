@@ -8,9 +8,8 @@ import math
 
 from src.core.config import TransformerExperimentConfig
 from src.models.utils import (
-    weights_to_image_dict,
+    tokens_to_image_dict,
 )
-from src.data.data_converter import tokens_to_weights
 from src.models.autoencoder.losses import GammaContrastReconLoss
 from src.models.autoencoder.transformer import Encoder, Decoder, ProjectionHead
 from src.data.inr import INR
@@ -24,9 +23,7 @@ from src.data.augmentations import (
     StackBatches,
     PermutationSelector,
 )
-# from src.models.utils import (
-#     create_reconstruction_visualizations_with_state_dict as create_reconstruction_visualizations,
-# )
+
 
 def identity_transform(tensor, mask, pos):
     return tensor, mask, pos, tensor, mask, pos
@@ -115,33 +112,83 @@ class Autoencoder(pl.LightningModule):
             if pn.endswith("c_proj.weight"):
                 torch.nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * num_layers))
 
+    @torch.no_grad()
+    def visualize_reconstructions(self, samples, prefix: str, batch_idx: int):
+        """Visualize reconstructions and log them."""
+
+        if samples is None:
+            print("Fixed samples not initialized.")
+            return
+
+        # Process batch
+        tokens, masks, positions = samples
+
+        latent, reconstructed, _ = self.forward(tokens, positions)
+
+        reference_checkpoint = self.trainer.val_dataloaders.dataset.get_state_dict(0)
+
+        vis_dict = tokens_to_image_dict(
+            reconstructed,  # tokens
+            positions,  # pos
+            self.demo_inr,
+            f"{prefix}/reconstruction",
+            self.device,
+            reference_checkpoint,
+        )
+
+        vis_dict["global_step"] = self.global_step
+        self.logger.experiment.log(vis_dict)
+
     def on_train_start(self):
         """Setup fixed validation and training samples for visualization."""
         num_samples = self.config.logging.num_samples_to_visualize
 
-        if (
-            len(self.trainer.val_dataloaders.dataset) < num_samples
-            or len(self.trainer.train_dataloader.dataset) < num_samples
-        ):
-            raise ValueError(
-                f"Number of samples to visualize ({num_samples}) is greater than the number of samples in the dataset ({len(self.trainer.val_dataloaders.dataset)})."
-            )
+        val_num_samples = (
+            num_samples
+            if num_samples < len(self.trainer.val_dataloaders.dataset)
+            else len(self.trainer.val_dataloaders.dataset)
+        )
+
+        train_num_samples = (
+            num_samples
+            if num_samples < len(self.trainer.train_dataloader.dataset)
+            else len(self.trainer.train_dataloader.dataset)
+        )
 
         self.fixed_val_samples = [
-            self.trainer.val_dataloaders.dataset.get_state_dict(i)
-            for i in range(num_samples)
+            self.trainer.val_dataloaders.dataset[i] for i in range(val_num_samples)
+        ]
+        self.fixed_val_samples = [
+            torch.stack(x).to(self.device) for x in zip(*self.fixed_val_samples)
         ]
 
         self.fixed_train_samples = [
-            self.trainer.train_dataloader.dataset.get_state_dict(i)
-            for i in range(num_samples)
+            self.trainer.train_dataloader.dataset[i] for i in range(train_num_samples)
+        ]
+        self.fixed_train_samples = [
+            torch.stack(x).to(self.device) for x in zip(*self.fixed_train_samples)
         ]
 
-        v = weights_to_image_dict(
-            self.fixed_val_samples, self.demo_inr, "val/original", self.device
+        reference_checkpoint = self.trainer.val_dataloaders.dataset.get_state_dict(0)
+
+        v_tokens, v_masks, v_pos = self.fixed_val_samples
+        t_tokens, t_masks, t_pos = self.fixed_train_samples
+
+        v = tokens_to_image_dict(
+            v_tokens,  # tokens
+            v_pos,  # pos
+            self.demo_inr,
+            "val/original",
+            self.device,
+            reference_checkpoint,
         )
-        t = weights_to_image_dict(
-            self.fixed_train_samples, self.demo_inr, "train/original", self.device
+        t = tokens_to_image_dict(
+            t_tokens,  # tokens
+            t_pos,  # pos
+            self.demo_inr,
+            "train/original",
+            self.device,
+            reference_checkpoint,
         )
 
         self.logger.experiment.log(v)
@@ -338,94 +385,28 @@ class Autoencoder(pl.LightningModule):
 
         return loss_conv_conf[f"{prefix}/loss"], loss_conv_conf
 
-    # FIXME adjust
-    def visualize_reconstructions(self, prefix: str, batch_idx: int):
-        """Visualize reconstructions and log them."""
-        if (
-            batch_idx % self.config.logging.log_every_n_steps != 0
-            or self.current_epoch == 0
-        ):
-            return
-
-        with torch.no_grad():
-            num_samples = self.config.logging.num_samples_to_visualize
-            if prefix == "train":
-                samples = [
-                    self.trainer.train_dataloader.dataset[i] for i in range(num_samples)
-                ]
-            else:
-                samples = [
-                    self.trainer.val_dataloaders.dataset[i] for i in range(num_samples)
-                ]
-
-            # Process batch
-            tokens, masks, positions = zip(*samples)
-            tokens, masks, positions = (
-                torch.stack(tokens).to(self.device),
-                torch.stack(masks).to(self.device),
-                torch.stack(positions).to(self.device).to(torch.int32),
-            )
-
-            latent, reconstructed, _ = self.forward(tokens, positions)
-
-            reference_checkpoint = self.trainer.val_dataloaders.dataset.get_state_dict(
-                0
-            )
-
-            reconstructions = [
-                tokens_to_weights(t, p, reference_checkpoint)
-                for t, p in zip(reconstructed, positions)
-            ]
-
-            # step_key = f"{prefix}_step_{self.global_step}"
-            # self.fixed_sample_reconstructions[step_key] = reconstructions
-
-            vis_dict = weights_to_image_dict(
-                # samples,
-                reconstructions,
-                self.demo_inr,
-                f"{prefix}/reconstruction",
-                # batch_idx,
-                # self.global_step,
-                # is_fixed=True,
-                self.device,
-            )
-            vis_dict["global_step"] = self.global_step
-            self.logger.experiment.log(vis_dict)
-
-    # FIXME No longer needed
-    # def _process_batch(self, batch: List[Tensor]) -> Tuple[Tensor, Tensor, Tensor]:
-    #    """Convert batch to required tensor format."""
-    #    tokens, masks, positions = zip(
-    #        *[weights_to_tokens(b, tokensize=0, device=self.device) for b in batch]
-    #    )
-    #    return (
-    #        torch.stack(tokens).to(self.device),
-    #        torch.stack(masks).to(self.device),
-    #        torch.stack(positions).to(self.device).to(torch.int32),
-    #    )
-
-    # FIXME adjust
     def training_step(self, batch: List[Tensor], batch_idx: int) -> Tensor:
-        """Execute a single training step."""
-
-        # Process batch
-        tokens, masks, positions = zip(*batch)
-        tokens, masks, positions = (
-            torch.stack(tokens),
-            torch.stack(masks),
-            torch.stack(positions).to(torch.int32),
+        original_tokens, original_masks, original_positions = batch
+        tokens_i, masks_i, positions_i, tokens_j, masks_j, positions_j = (
+            self.train_transforms(original_tokens, original_masks, original_positions)
         )
+        batch_size = original_tokens.shape[0]
 
-        # Get transformed versions
-        transformed = self.train_transforms(tokens, masks, positions)
-
-        tokens_i, masks_i, positions_i = tokens, masks, positions
-        tokens_j, masks_j, positions_j = transformed[0], transformed[1], transformed[2]
-
-        # Forward pass
-        transform_output_i = self.forward(tokens_i, positions_i)
-        transform_output_j = self.forward(tokens_j, positions_j)
+        # FORWARD PASS
+        # I am combining the two views into one batch to make it faster
+        combined_tokens = torch.cat([tokens_i, tokens_j], dim=0)
+        combined_positions = torch.cat([positions_i, positions_j], dim=0)
+        output1, output2, output3 = self.forward(combined_tokens, combined_positions)
+        transform_output_i = (
+            output1[:batch_size],
+            output2[:batch_size],
+            output3[:batch_size],
+        )
+        transform_output_j = (
+            output1[batch_size:],
+            output2[batch_size:],
+            output3[batch_size:],
+        )
 
         # Compute loss
         loss, log_dict = self.compute_loss(
@@ -444,52 +425,43 @@ class Autoencoder(pl.LightningModule):
             batch_idx == 0
             and self.current_epoch % self.config.logging.sample_every_n_epochs == 0
         ):
-            # self.visualize_reconstructions(
-            #    batch, "train", batch_idx
-            # )
-            self.visualize_reconstructions("train", batch_idx)
+            # Log gradient norm
+            total_norm = 0.0
+            for p in self.parameters():
+                if p.grad is not None:
+                    param_norm = p.grad.data.norm(2)
+                    total_norm += param_norm.item() ** 2
+            total_norm = total_norm**0.5
+            self.log("train/grad_norm", total_norm, prog_bar=False, sync_dist=True)
 
-        # Log gradient norm
-        # if batch_idx % self.config.trainer.log_every_n_steps == 0:
-        #     total_norm = 0.0
-        #     for p in self.parameters():
-        #         if p.grad is not None:
-        #             param_norm = p.grad.data.norm(2)
-        #             total_norm += param_norm.item() ** 2
-        #     total_norm = total_norm**0.5
-        #     self.log("train/grad_norm", total_norm, prog_bar=False, sync_dist=True)
-
-        #     # Visualize both fixed samples and current batch
-        #     self.visualize_reconstructions(self.fixed_train_samples, "train", batch_idx)
+            # Visualize both fixed samples and current batch
+            self.visualize_reconstructions(self.fixed_train_samples, "train", batch_idx)
 
         return loss
 
     # FIXME adjust
     def validation_step(self, batch, batch_idx: int) -> dict[str, Tensor]:
-        # Process batch
-        tokens, masks, positions = zip(*batch)
-        tokens, masks, positions = (
-            torch.stack(tokens),
-            torch.stack(masks),
-            torch.stack(positions).to(torch.int32),
+        original_tokens, original_masks, original_positions = batch
+        tokens_i, masks_i, positions_i, tokens_j, masks_j, positions_j = (
+            self.val_transforms(original_tokens, original_masks, original_positions)
         )
+        batch_size = original_tokens.shape[0]
 
-        # Get transformed versions
-        transformed = self.val_transforms(*[tokens, masks, positions])
-        # print("Tokens:",tokens.shape)
-        # print("Masks:",masks.shape)
-        # print("Positions:",positions.shape)
-        # for x in transformed:
-        #    print(x.shape)
-        tokens_i, masks_i, positions_i = transformed[0], transformed[1], transformed[2]
-        tokens_j, masks_j, positions_j = transformed[3], transformed[4], transformed[5]
-        if tokens_i.ndim == 2:
-            tokens_i = tokens_i.unsqueeze(0)
-            tokens_j = tokens_j.unsqueeze(0)
-
-        # Forward pass
-        transform_output_i = self.forward(tokens_i, positions_i)
-        transform_output_j = self.forward(tokens_j, positions_j)
+        # FORWARD PASS
+        # I am combining the two views into one batch to make it faster
+        combined_tokens = torch.cat([tokens_i, tokens_j], dim=0)
+        combined_positions = torch.cat([positions_i, positions_j], dim=0)
+        output1, output2, output3 = self.forward(combined_tokens, combined_positions)
+        transform_output_i = (
+            output1[:batch_size],
+            output2[:batch_size],
+            output3[:batch_size],
+        )
+        transform_output_j = (
+            output1[batch_size:],
+            output2[batch_size:],
+            output3[batch_size:],
+        )
 
         # Compute loss
         val_loss, val_log_dict = self.compute_loss(
@@ -509,26 +481,9 @@ class Autoencoder(pl.LightningModule):
             batch_idx == 0
             and self.current_epoch % self.config.logging.sample_every_n_epochs == 0
         ):
-            self.visualize_reconstructions("val", batch_idx)
-
-        return val_log_dict
-
-        """
-        reconstructions = self.forward(batch)
-        val_loss, val_log_dict = self.compute_loss(batch, reconstructions, prefix="val")
-
-        # Log validation metrics
-        self.log_dict(val_log_dict, prog_bar=True, batch_size=batch.shape[0])
-
-        # Visualize both fixed samples and current batch
-        if (
-            batch_idx == 0
-            and self.current_epoch % self.config.logging.sample_every_n_epochs == 0
-        ):
             self.visualize_reconstructions(self.fixed_val_samples, "val", batch_idx)
 
-        return val_loss
-        """
+        return val_log_dict
 
     def configure_optimizers(self):
         # Configure optimizer

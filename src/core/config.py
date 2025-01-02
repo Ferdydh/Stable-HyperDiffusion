@@ -258,7 +258,7 @@ class CheckpointConfig:
     @classmethod
     def default(cls) -> "CheckpointConfig":
         return cls(
-            dirpath="checkpoints",
+            dirpath="logs/checkpoints",
             filename="autoencoder-{epoch:02d}-{val_loss:.2f}",
             monitor="val/loss",
             mode="min",
@@ -355,7 +355,7 @@ class AugmentationConfig:
             multi_windows_train=None,
             apply_augmentations=True,
         )
-    
+
     @classmethod
     def no_aug(cls) -> "AugmentationConfig":
         return cls(

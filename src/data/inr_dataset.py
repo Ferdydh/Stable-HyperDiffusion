@@ -46,17 +46,6 @@ class INRDataset(Dataset):
         return len(self.files)
 
 
-def collate_state_dicts_as_list(batch):
-    """
-    Custom collate function to return a batch as a list of state_dicts.
-    Args:
-        batch (list): A list of state_dicts from the Dataset.
-    Returns:
-        list: The batch as a list of state_dicts.
-    """
-    return batch
-
-
 class DataHandler(pl.LightningDataModule):
     def __init__(
         self,
@@ -92,10 +81,6 @@ class DataHandler(pl.LightningDataModule):
     def setup(self, stage: Optional[str] = None):
         # Create split datasets
         if stage == "fit" or stage is None:
-            #full_dataset = INRDataset(
-            #    files=self.files, device=self.config.device, is_for_mlp=self.is_for_mlp
-            #)
-
             # Calculate split sizes
             train_size = int(len(self.files) * self.split_ratio)
             val_size = len(self.files) - train_size
@@ -103,7 +88,7 @@ class DataHandler(pl.LightningDataModule):
             if train_size == len(self.files) or val_size == 0 or train_size == 0:
                 # This should only happen if we have sample_limit=1 or split_ratio=1.0
                 train_files = self.files
-                val_files = self.files   
+                val_files = self.files
             else:
                 train_files, val_files = random_split(
                     self.files, [train_size, val_size]
@@ -131,28 +116,22 @@ class DataHandler(pl.LightningDataModule):
                 print("No overlapping files between train and val datasets.")
 
     def train_dataloader(self):
-        collate_fn = collate_state_dicts_as_list if not self.is_for_mlp else None
-
         return DataLoader(
             self.train_dataset,
             batch_size=self.config.data.batch_size,
             num_workers=self.config.data.num_workers,
             shuffle=True,
             persistent_workers=True,
-            collate_fn=collate_fn,
             drop_last=False,
         )
 
     def val_dataloader(self):
-        collate_fn = collate_state_dicts_as_list if not self.is_for_mlp else None
-
         return DataLoader(
             self.val_dataset,
             batch_size=self.config.data.batch_size,
             num_workers=self.config.data.num_workers,
             shuffle=False,
             persistent_workers=True,
-            collate_fn=collate_fn,
             drop_last=False,
         )
 
