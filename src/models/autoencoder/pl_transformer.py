@@ -1,3 +1,4 @@
+from transformers import get_linear_schedule_with_warmup
 import numpy as np
 import torch.nn.functional as F
 from dataclasses import asdict
@@ -90,8 +91,13 @@ class Autoencoder(pl.LightningModule):
             else torch.tensor(0.0)
         )
 
+    def on_after_optimizer_step(self, optimizer):
+        return self._log_grad_norm(optimizer, prefix="after")
+
     def on_before_optimizer_step(self, optimizer):
-        """Log gradient norms before optimizer step"""
+        return self._log_grad_norm(optimizer, prefix="before")
+
+    def _log_grad_norm(self, optimizer, prefix: str):
         # Compute total norm over all parameters
         total_norm = torch.norm(
             torch.stack(
@@ -103,16 +109,16 @@ class Autoencoder(pl.LightningModule):
             ),
             2,
         )
-        self.log("train/grad_norm", total_norm, prog_bar=False, sync_dist=True)
+        self.log(f"{prefix}/grad_norm", total_norm, prog_bar=False, sync_dist=True)
 
         # Add per-component gradient norms for debugging
         self.log(
-            "train/encoder_grad_norm",
+            f"{prefix}/encoder_grad_norm",
             self._get_grad_norm(self.encoder.parameters()),
             prog_bar=False,
         )
         self.log(
-            "train/decoder_grad_norm",
+            f"{prefix}/decoder_grad_norm",
             self._get_grad_norm(self.decoder.parameters()),
             prog_bar=False,
         )
@@ -126,7 +132,7 @@ class Autoencoder(pl.LightningModule):
 
         # Process batch
         tokens, masks, positions = samples
-        latent, reconstructed = self.forward(tokens, positions)
+        reconstructed, z, mu, logvar = self.forward(tokens, positions)
         reference_checkpoint = self.trainer.val_dataloaders.dataset.get_state_dict(0)
 
         vis_dict = tokens_to_image_dict(
@@ -142,20 +148,20 @@ class Autoencoder(pl.LightningModule):
         self.logger.experiment.log(vis_dict)
 
     @torch.no_grad()
-    def log_latent_distribution(self, latent: Tensor, prefix: str):
-        """Log histograms and other visualizations of the latent space"""
-        batch_size = latent.shape[0]
-        latent_flat = latent.reshape(batch_size, -1)
+    def log_latent_distribution(self, mu: Tensor, logvar: Tensor, prefix: str):
+        batch_size = mu.shape[0]
+        mu_flat = mu.reshape(batch_size, -1)
 
-        # Log histogram of latent values
+        # Most commonly analyzed metrics
+        kl_per_dim = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())
+
         self.logger.experiment.log(
             {
-                f"{prefix}/latent_histogram": wandb.Histogram(
-                    latent_flat.cpu().numpy()
-                ),
-                f"{prefix}/latent_abs_histogram": wandb.Histogram(
-                    torch.abs(latent_flat).cpu().numpy()
-                ),
+                # KL divergence metrics - key for detecting posterior collapse
+                f"{prefix}/mean_kl_per_dim": kl_per_dim.mean().item(),
+                f"{prefix}/kl_histogram": wandb.Histogram(kl_per_dim.cpu().numpy()),
+                # Mean statistics - to check if latent space is centered
+                f"{prefix}/mean_mu": mu_flat.mean().item(),
             }
         )
 
@@ -226,9 +232,9 @@ class Autoencoder(pl.LightningModule):
         input_tokens: Tensor,
         positions: Tensor,
         attention_mask: Optional[Tensor] = None,
-    ) -> Tuple[Tensor, Tensor]:
+    ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """
-        Forward pass through the autoencoder.
+        Forward pass through the VAE.
 
         Args:
             input_tokens: Input token sequence [batch_size, seq_len, input_dim]
@@ -236,40 +242,44 @@ class Autoencoder(pl.LightningModule):
             attention_mask: Optional attention mask [batch_size, seq_len]
 
         Returns:
-            latent: Encoded latent representations
             reconstructed: Reconstructed token sequence
+            z: Sampled latent vectors
+            mu: Mean of the latent Gaussian
+            logvar: Log variance of the latent Gaussian
         """
-        latent = self.encoder(input_tokens, positions, attention_mask)
-        reconstructed = self.decoder(latent, positions, attention_mask)
-        return latent, reconstructed
+        # Get latent distribution parameters and sample
+        z, mu, logvar = self.encoder(input_tokens, positions, attention_mask)
+
+        # Reconstruct from sampled latent
+        reconstructed = self.decoder(z, positions, attention_mask)
+
+        return reconstructed, z, mu, logvar
 
     def compute_loss(
         self,
-        latent: Tensor,
         reconstructed: Tensor,
-        original_tokens: Tensor,
+        original: Tensor,
+        mu: Tensor,
+        logvar: Tensor,
         prefix: str = "train",
-        beta: float = 1e-5,
+        beta: float = 0.1,
     ) -> Tuple[Tensor, Dict[str, Tensor]]:
         """
         Compute VAE loss optimized for latent diffusion with improved stability and logging
         """
-        # Reconstruction loss
-        recon_loss = F.mse_loss(reconstructed, original_tokens)
 
-        # Reshape and normalize latent
-        batch_size = latent.shape[0]
-        latent_flat = latent.reshape(batch_size, -1)
+        # Reconstruction loss (MSE)
+        recon_loss = F.mse_loss(reconstructed, original)
 
-        # KL loss with improved numerical stability
-        kl_loss = 0.5 * torch.mean(
-            torch.sum(latent_flat.pow(2), dim=1)  # E[z^2] term
-            + math.log(2 * math.pi)  # Constant term, moved outside sum
-            + 1  # log(σ²) term for standard normal
+        # KL divergence loss
+        # KL = -0.5 * sum(1 + log(σ²) - μ² - σ²)
+        kl_loss = -0.5 * torch.mean(
+            torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1)
         )
 
-        # Scale losses
-        total_loss = recon_loss + beta * kl_loss
+        # Total loss with β weighting
+        # Recon loss goal is 1e-6
+        total_loss = recon_loss * 1e4 + beta * kl_loss
 
         # Detailed logging dictionary
         loss_dict = {
@@ -281,20 +291,21 @@ class Autoencoder(pl.LightningModule):
 
     def training_step(self, batch: List[Tensor], batch_idx: int) -> Tensor:
         original_tokens, original_masks, original_positions = batch
-        latent, reconstructed_tokens = self.forward(original_tokens, original_positions)
+        reconstructed, z, mu, logvar = self.forward(original_tokens, original_positions)
 
         # Compute loss
         loss, log_dict = self.compute_loss(
-            latent,
-            reconstructed_tokens,
+            reconstructed,
             original_tokens,
+            mu,
+            logvar,
             prefix="train",
         )
 
         self.log_dict(log_dict, prog_bar=True, sync_dist=True)
 
         if batch_idx == 0:
-            self.log_latent_distribution(latent, "train")
+            self.log_latent_distribution(mu, logvar, "train")
 
             if self.current_epoch % self.config.logging.sample_every_n_epochs == 0:
                 self.visualize_reconstructions(
@@ -305,47 +316,53 @@ class Autoencoder(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx: int) -> dict[str, Tensor]:
         original_tokens, original_masks, original_positions = batch
-        latent, reconstructed_tokens = self.forward(original_tokens, original_positions)
+        reconstructed, z, mu, logvar = self.forward(original_tokens, original_positions)
 
         # Compute loss
-        val_loss, val_log_dict = self.compute_loss(
-            latent,
-            reconstructed_tokens,
+        loss, log_dict = self.compute_loss(
+            reconstructed,
             original_tokens,
+            mu,
+            logvar,
             prefix="val",
         )
 
         # Log validation metrics
-        self.log_dict(val_log_dict, prog_bar=True, sync_dist=True)
+        self.log_dict(log_dict, prog_bar=True, sync_dist=True)
 
         if batch_idx == 0:
-            self.log_latent_distribution(latent, "val")
+            self.log_latent_distribution(mu, logvar, "val")
 
             if self.current_epoch % self.config.logging.sample_every_n_epochs == 0:
                 self.visualize_reconstructions(self.fixed_val_samples, "val", batch_idx)
 
-        return val_log_dict
+        return log_dict
 
     def configure_optimizers(self):
-        # Configure optimizer
+        # AdamW optimizer with explicit defaults
         optimizer = torch.optim.AdamW(
             self.parameters(),
-            lr=self.config.optimizer.lr,
-            betas=tuple(self.config.optimizer.betas),
-            eps=self.config.optimizer.eps,
-            weight_decay=self.config.optimizer.weight_decay,
+            lr=self.config.optimizer.lr,  # typically 2e-4 or 5e-4
+            betas=tuple(self.config.optimizer.betas),  # typically (0.9, 0.999)
+            eps=self.config.optimizer.eps,  # typically 1e-8
+            weight_decay=self.config.optimizer.weight_decay,  # typically 0.01
         )
 
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=self.config.scheduler.T_max,
-            eta_min=self.config.scheduler.eta_min,
+        total_steps = self.trainer.estimated_stepping_batches
+        warmup_steps = int(total_steps * self.config.scheduler.warmup_ratio)
+
+        # Linear warmup scheduler
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps
         )
 
+        # Return in Lightning format
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
+                "interval": "step",  # Important: call scheduler every step, not epoch
+                "frequency": 1,
                 "monitor": self.config.checkpoint.monitor,
             },
         }

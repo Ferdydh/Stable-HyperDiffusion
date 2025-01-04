@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -186,7 +186,7 @@ class PositionEmbs(nn.Module):
 
 
 class Encoder(nn.Module):
-    """Encodes input tokens into latent representations."""
+    """Encodes input tokens into latent distributions."""
 
     def __init__(
         self,
@@ -201,13 +201,9 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
 
         self.tokenizer = nn.Linear(input_dim, d_model)
-        self.input_norm = nn.LayerNorm(d_model)  # Normalize after tokenization
-
         self.position_embeddings = PositionEmbs(
             max_positions=max_positions, embedding_dim=d_model
         )
-        self.pos_norm = nn.LayerNorm(d_model)  # Normalize after position embedding
-
         self.transformer = Transformer(
             n_layer=num_layers,
             n_head=num_heads,
@@ -215,23 +211,36 @@ class Encoder(nn.Module):
             dropout=dropout,
             bias=False,
         )
-        self.pre_latent_norm = nn.LayerNorm(d_model)  # Normalize before projection
-        self.latent_projector = nn.Linear(d_model, latent_dim)
-        self.latent_norm = nn.LayerNorm(latent_dim)  # Final normalization
+        # Separate projectors for mean and log variance
+        self.mean_projector = nn.Linear(d_model, latent_dim)
+        self.logvar_projector = nn.Linear(d_model, latent_dim)
 
-        # Initialize latent projector with larger values
-        nn.init.normal_(self.latent_projector.weight, mean=0.0, std=0.1)
-        if self.latent_projector.bias is not None:
-            nn.init.zeros_(self.latent_projector.bias)
+    def reparameterize(self, mu: Tensor, logvar: Tensor) -> Tensor:
+        """
+        Perform reparameterization trick to sample from N(mu, var) distribution.
+
+        Args:
+            mu: Mean of the latent Gaussian [batch_size, seq_len, latent_dim]
+            logvar: Log variance of the latent Gaussian [batch_size, seq_len, latent_dim]
+
+        Returns:
+            z: Sampled latent vectors [batch_size, seq_len, latent_dim]
+        """
+        if self.training:
+            std = torch.exp(0.5 * logvar)
+            eps = torch.randn_like(std)
+            return mu + eps * std
+        else:
+            return mu
 
     def forward(
         self,
         input_tokens: Tensor,
         positions: Tensor,
         attention_mask: Optional[Tensor] = None,
-    ) -> Tensor:
+    ) -> Tuple[Tensor, Tensor, Tensor]:
         """
-        Encode input tokens into latent representations.
+        Encode input tokens into latent distributions.
 
         Args:
             input_tokens: Input token sequence [batch_size, seq_len, input_dim]
@@ -239,32 +248,22 @@ class Encoder(nn.Module):
             attention_mask: Optional attention mask [batch_size, seq_len]
 
         Returns:
-            latent: Encoded latent representations [batch_size, seq_len, latent_dim]
+            z: Sampled latent vectors [batch_size, seq_len, latent_dim]
+            mu: Mean of the latent Gaussian [batch_size, seq_len, latent_dim]
+            logvar: Log variance of the latent Gaussian [batch_size, seq_len, latent_dim]
         """
-        embedded = self.tokenizer(input_tokens)  # batchsize * 65 * 33
-        embedded = self.input_norm(embedded)
-
+        embedded = self.tokenizer(input_tokens)
         positioned = self.position_embeddings(embedded, positions)
-        positioned = self.pos_norm(positioned)
-
         transformed = self.transformer(positioned, mask=attention_mask)
-        transformed = self.pre_latent_norm(transformed)
 
-        # batchsize * 65 * 33
-        # batchsize * 65 * 256 <- transformer
-        # batchsize * 65 * 1024 <- latent_projector
+        # Get distributional parameters
+        mu = self.mean_projector(transformed)
+        logvar = self.logvar_projector(transformed)
 
-        # batchsize * (65 * 33) = 2145
-        # batchsize * (1024) <- transformer
-        # batchsize * (512) <- latent_projector
+        # Sample latent vectors using reparameterization trick
+        z = self.reparameterize(mu, logvar)
 
-        # batchsize * 65 * 33
-        # batchsize * 65 * 64 <- transformer
-        # batchsize * 65 * 8 <- latent_projector
-
-        latent = self.latent_projector(transformed)
-        latent = self.latent_norm(latent)
-        return latent
+        return z, mu, logvar
 
 
 class Decoder(nn.Module):
@@ -282,15 +281,10 @@ class Decoder(nn.Module):
     ):
         super(Decoder, self).__init__()
 
-        self.latent_norm = nn.LayerNorm(latent_dim)  # Normalize incoming latents
         self.latent_projector = nn.Linear(latent_dim, d_model)
-        self.proj_norm = nn.LayerNorm(d_model)  # Normalize after projection
-
         self.position_embeddings = PositionEmbs(
             max_positions=max_positions, embedding_dim=d_model
         )
-        self.pos_norm = nn.LayerNorm(d_model)  # Normalize after position embedding
-
         self.transformer = Transformer(
             n_layer=num_layers,
             n_head=num_heads,
@@ -298,15 +292,7 @@ class Decoder(nn.Module):
             dropout=dropout,
             bias=False,
         )
-        self.pre_output_norm = nn.LayerNorm(
-            d_model
-        )  # Normalize before final projection
         self.detokenizer = nn.Linear(d_model, input_dim)
-
-        # Initialize latent projector with larger values
-        nn.init.normal_(self.latent_projector.weight, mean=0.0, std=0.1)
-        if self.latent_projector.bias is not None:
-            nn.init.zeros_(self.latent_projector.bias)
 
     def forward(
         self, latent: Tensor, positions: Tensor, attention_mask: Optional[Tensor] = None
@@ -315,22 +301,15 @@ class Decoder(nn.Module):
         Decode latent representations back to token space.
 
         Args:
-            latent: Encoded latent representations [batch_size, seq_len, latent_dim]
+            latent: Sampled latent vectors [batch_size, seq_len, latent_dim]
             positions: Position encodings [batch_size, seq_len, n_pos_dims]
             attention_mask: Optional attention mask [batch_size, seq_len]
 
         Returns:
             reconstructed: Reconstructed token sequence [batch_size, seq_len, input_dim]
         """
-        latent = self.latent_norm(latent)
         decoded = self.latent_projector(latent)
-        decoded = self.proj_norm(decoded)
-
         positioned = self.position_embeddings(decoded, positions)
-        positioned = self.pos_norm(positioned)
-
         transformed = self.transformer(positioned, mask=attention_mask)
-        transformed = self.pre_output_norm(transformed)
-
         reconstructed = self.detokenizer(transformed)
         return reconstructed

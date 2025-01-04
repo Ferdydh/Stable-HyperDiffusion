@@ -156,7 +156,7 @@ class OptimizerConfig:
     name: str
     lr: float
     betas: Tuple[float, float] = (0.9, 0.999)
-    weight_decay: float = 1e-5
+    weight_decay: float = 0.01
     eps: float = 1e-8
 
     @classmethod
@@ -164,22 +164,24 @@ class OptimizerConfig:
         return cls(
             name="adamw",
             lr=1e-4,
-            weight_decay=3e-9,
+            weight_decay=0.01,
         )
 
 
 @dataclass
 class SchedulerConfig:
-    name: str
-    T_max: Optional[int] = None
-    eta_min: Optional[float] = None
+    warmup_ratio: float
+    # name: str
+    # T_max: Optional[int] = None
+    # eta_min: Optional[float] = None
 
     @classmethod
     def cosine_default(cls) -> "SchedulerConfig":
         return cls(
-            name="cosine",
-            T_max=1000,
-            eta_min=1e-6,
+            warmup_ratio=0.1,
+            # name="cosine",
+            # T_max=1000,
+            # eta_min=1e-6,
         )
 
 

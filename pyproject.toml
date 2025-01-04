@@ -11,5 +11,6 @@ dependencies = [
     "random-fourier-features-pytorch>=1.0.1",
     "scipy>=1.14.1",
     "torch>=2.5.1",
+    "transformers>=4.47.1",
     "wandb>=0.19.1",
 ]
