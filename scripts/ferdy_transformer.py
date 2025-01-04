@@ -6,7 +6,8 @@ if __name__ == "__main__":
     config: TransformerExperimentConfig = TransformerExperimentConfig.default()
 
     # Logging
-    config.logging.sample_every_n_epochs = 50
+    # config.logging.sample_every_n_epochs = 50
+    config.logging.sample_every_n_epochs = 1
     config.logging.num_samples_to_visualize = 3
     config.logging.log_every_n_steps = 10
 
@@ -22,18 +23,18 @@ if __name__ == "__main__":
     # config.model.latent_dim = 8
 
     config.model.d_model = 128  # 256 -> 4
-    config.model.latent_dim = 16
+    config.model.latent_dim = 32
 
     config.early_stopping.patience = 300
     config.trainer.max_epochs = 1000
     config.scheduler.warmup_ratio = 0.05
 
     # data
-    config.data = DataConfig.small()
-    # config.data = DataConfig.full()
-    config.data.batch_size = 8
-    config.data.split_ratio = 0.8
-    config.data.sample_limit = 10
+    # config.data = DataConfig.small()
+    # config.data.batch_size = 8
+    # config.data.split_ratio = 0.8
+    # config.data.sample_limit = 10
+    config.data = DataConfig.full()
 
     # config.scheduler.eta_min = 1e-4
     # config.scheduler.T_max = 1000
