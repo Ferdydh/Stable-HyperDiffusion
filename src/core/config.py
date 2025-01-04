@@ -294,91 +294,6 @@ class EarlyStoppingConfig:
 
 
 @dataclass
-class TrainingConfig:
-    """Contrastive learning configuration for transformer"""
-
-    gamma: float
-    reduction: str
-    temperature: float
-    contrast: str
-    z_var_penalty: float
-
-    @classmethod
-    def default(cls) -> "TrainingConfig":
-        return cls(
-            gamma=0.05,
-            reduction="mean",
-            temperature=0.1,
-            contrast="simclr",
-            z_var_penalty=0.0,
-        )
-
-
-@dataclass
-class AugmentationConfig:
-    """Contrastive learning configuration for transformer"""
-
-    permutation_number_train: int
-    permutation_number_val: int
-    view_1_canon_train: bool
-    view_1_canon_val: bool
-    view_2_canon_train: bool
-    view_2_canon_val: bool
-    add_noise_view_1_train: float
-    add_noise_view_1_val: float
-    add_noise_view_2_train: float
-    add_noise_view_2_val: float
-    erase_augment_view_1_train: float
-    erase_augment_view_2_train: float
-    erase_augment_view_1_val: float
-    erase_augment_view_2_val: float
-    multi_windows_train: float
-    apply_augmentations: bool
-
-    @classmethod
-    def default(cls) -> "AugmentationConfig":
-        return cls(
-            permutation_number_train=5,
-            permutation_number_val=5,
-            view_1_canon_train=False,
-            view_1_canon_val=True,
-            view_2_canon_train=True,
-            view_2_canon_val=False,
-            add_noise_view_1_train=0.1,
-            add_noise_view_1_val=0.0,
-            add_noise_view_2_train=0.1,
-            add_noise_view_2_val=0.0,
-            erase_augment_view_1_train=None,
-            erase_augment_view_2_train=None,
-            erase_augment_view_1_val=None,
-            erase_augment_view_2_val=None,
-            multi_windows_train=None,
-            apply_augmentations=True,
-        )
-
-    @classmethod
-    def no_aug(cls) -> "AugmentationConfig":
-        return cls(
-            permutation_number_train=5,
-            permutation_number_val=5,
-            view_1_canon_train=False,
-            view_1_canon_val=True,
-            view_2_canon_train=True,
-            view_2_canon_val=False,
-            add_noise_view_1_train=0.1,
-            add_noise_view_1_val=0.0,
-            add_noise_view_2_train=0.1,
-            add_noise_view_2_val=0.0,
-            erase_augment_view_1_train=None,
-            erase_augment_view_2_train=None,
-            erase_augment_view_1_val=None,
-            erase_augment_view_2_val=None,
-            multi_windows_train=None,
-            apply_augmentations=False,
-        )
-
-
-@dataclass
 class BaseExperimentConfig:
     """Base configuration for all experiments"""
 
@@ -389,7 +304,6 @@ class BaseExperimentConfig:
     logging: LoggingConfig
     checkpoint: CheckpointConfig
     early_stopping: EarlyStoppingConfig
-    augmentations: AugmentationConfig
     device: torch.device
 
 
@@ -416,20 +330,17 @@ class MLPExperimentConfig(BaseExperimentConfig):
 @dataclass
 class TransformerExperimentConfig(BaseExperimentConfig):
     model: TransformerModelConfig
-    training: TrainingConfig
 
     @classmethod
     def default(cls) -> "TransformerExperimentConfig":
         return cls(
             data=DataConfig.sanity(),
             model=TransformerModelConfig.default(),
-            training=TrainingConfig.default(),
             optimizer=OptimizerConfig.default(),
             scheduler=SchedulerConfig.cosine_default(),
             trainer=TrainerConfig.sanity(),
             logging=LoggingConfig.sanity(),
             checkpoint=CheckpointConfig.default(),
             early_stopping=EarlyStoppingConfig.default(),
-            augmentations=AugmentationConfig.default(),
             device=get_device(),
         )

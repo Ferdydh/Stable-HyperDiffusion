@@ -1,5 +1,3 @@
-import numpy as np
-import torch.nn.functional as F
 from dataclasses import asdict
 import torch
 import pytorch_lightning as pl
@@ -7,16 +5,15 @@ from torch import Tensor
 from typing import Tuple, Dict, List, Optional
 import torch.nn as nn
 import math
-import wandb
 
 from src.core.config import TransformerExperimentConfig
-from src.models.utils import tokens_to_image_dict
-from src.models.autoencoder.transformer import Encoder, Decoder
+from src.models.utils import (
+    tokens_to_image_dict,
+)
+from src.models.autoencoder.losses import GammaContrastReconLoss
+from src.models.autoencoder.transformer import Encoder, Decoder, ProjectionHead
 from src.data.inr import INR
-
-demo_inr = INR(up_scale=16)
-for param in demo_inr.parameters():
-    param.requires_grad = False
+from src.data.augmentations import setup_transformations
 
 
 class Autoencoder(pl.LightningModule):
@@ -33,6 +30,7 @@ class Autoencoder(pl.LightningModule):
             num_layers=config.model.num_layers,
             d_model=config.model.d_model,
             dropout=config.model.dropout,
+            window_size=config.model.window_size,
             num_heads=config.model.num_heads,
             input_dim=config.model.input_dim,
             latent_dim=config.model.latent_dim,
@@ -48,8 +46,25 @@ class Autoencoder(pl.LightningModule):
             latent_dim=config.model.latent_dim,
         )
 
+        # Initialize projection head
+        self.projection_head = ProjectionHead(
+            d_model=config.model.latent_dim,
+            n_tokens=config.model.n_tokens,
+            output_dim=config.model.projection_dim,
+        )
+
+        # Initialize loss function
+        self.loss_func = GammaContrastReconLoss(
+            gamma=self.config.training.gamma,
+            reduction=self.config.training.reduction,
+            batch_size=self.config.data.batch_size,
+            temperature=self.config.training.temperature,
+            contrast=self.config.training.contrast,
+            z_var_penalty=self.config.training.z_var_penalty,
+        )
+
         # Initialize demo INR for visualization
-        self.demo_inr = demo_inr.to(self.device)
+        self.demo_inr = INR(up_scale=16).to(self.device)
 
         # Initialize tracking variables
         self.fixed_val_samples: list[Tensor] | None = None
@@ -57,6 +72,11 @@ class Autoencoder(pl.LightningModule):
 
         # Initialize weights
         self._initialize_weights()
+
+        # Initialize transformations
+        self.train_transforms, self.val_transforms, self.test_transforms = (
+            setup_transformations(config)
+        )
 
     def _initialize_weights(self):
         """Initialize model weights with specific distributions."""
@@ -77,56 +97,19 @@ class Autoencoder(pl.LightningModule):
             if pn.endswith("c_proj.weight"):
                 torch.nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * num_layers))
 
-    def _get_grad_norm(self, parameters):
-        """Calculate gradient norm for a set of parameters"""
-        if isinstance(parameters, torch.Tensor):
-            parameters = [parameters]
-        params_norms = [
-            torch.norm(p.grad.detach(), 2) for p in parameters if p.grad is not None
-        ]
-        return (
-            torch.norm(torch.stack(params_norms), 2)
-            if params_norms
-            else torch.tensor(0.0)
-        )
-
-    def on_before_optimizer_step(self, optimizer):
-        """Log gradient norms before optimizer step"""
-        # Compute total norm over all parameters
-        total_norm = torch.norm(
-            torch.stack(
-                [
-                    torch.norm(p.grad.detach(), 2)
-                    for p in self.parameters()
-                    if p.grad is not None
-                ]
-            ),
-            2,
-        )
-        self.log("train/grad_norm", total_norm, prog_bar=False, sync_dist=True)
-
-        # Add per-component gradient norms for debugging
-        self.log(
-            "train/encoder_grad_norm",
-            self._get_grad_norm(self.encoder.parameters()),
-            prog_bar=False,
-        )
-        self.log(
-            "train/decoder_grad_norm",
-            self._get_grad_norm(self.decoder.parameters()),
-            prog_bar=False,
-        )
-
     @torch.no_grad()
     def visualize_reconstructions(self, samples, prefix: str, batch_idx: int):
         """Visualize reconstructions and log them."""
+
         if samples is None:
             print("Fixed samples not initialized.")
             return
 
         # Process batch
         tokens, masks, positions = samples
-        latent, reconstructed = self.forward(tokens, positions)
+
+        latent, reconstructed, _ = self.forward(tokens, positions)
+
         reference_checkpoint = self.trainer.val_dataloaders.dataset.get_state_dict(0)
 
         vis_dict = tokens_to_image_dict(
@@ -140,31 +123,6 @@ class Autoencoder(pl.LightningModule):
 
         vis_dict["global_step"] = self.global_step
         self.logger.experiment.log(vis_dict)
-
-    @torch.no_grad()
-    def log_latent_distribution(self, latent: Tensor, prefix: str):
-        """Log histograms and other visualizations of the latent space"""
-        batch_size = latent.shape[0]
-        latent_flat = latent.reshape(batch_size, -1)
-
-        # Log histogram of latent values
-        self.logger.experiment.log(
-            {
-                f"{prefix}/latent_histogram": wandb.Histogram(
-                    latent_flat.cpu().numpy()
-                ),
-                f"{prefix}/latent_abs_histogram": wandb.Histogram(
-                    torch.abs(latent_flat).cpu().numpy()
-                ),
-            }
-        )
-
-    def on_train_batch_start(self, batch, batch_idx):
-        """Log learning rate at the start of each training batch"""
-        opt = self.optimizers()
-        if opt is not None:
-            current_lr = opt.param_groups[0]["lr"]
-            self.log("train/lr", current_lr, prog_bar=True)
 
     def on_train_start(self):
         """Setup fixed validation and training samples for visualization."""
@@ -226,7 +184,7 @@ class Autoencoder(pl.LightningModule):
         input_tokens: Tensor,
         positions: Tensor,
         attention_mask: Optional[Tensor] = None,
-    ) -> Tuple[Tensor, Tensor]:
+    ) -> Tuple[Tensor, Tensor, Tensor]:
         """
         Forward pass through the autoencoder.
 
@@ -238,91 +196,141 @@ class Autoencoder(pl.LightningModule):
         Returns:
             latent: Encoded latent representations
             reconstructed: Reconstructed token sequence
+            projected: Projected latent representations
         """
         latent = self.encoder(input_tokens, positions, attention_mask)
+        projected = self.projection_head(latent)
         reconstructed = self.decoder(latent, positions, attention_mask)
-        return latent, reconstructed
+        return latent, reconstructed, projected
 
+    # FIXME adjust
     def compute_loss(
         self,
-        latent: Tensor,
-        reconstructed: Tensor,
-        original_tokens: Tensor,
+        transform_output_i: Tuple[Tensor, Tensor, Tensor],
+        transform_output_j: Tuple[Tensor, Tensor, Tensor],
+        input_tokens_i: Tensor,
+        input_tokens_j: Tensor,
+        masks_i: Tensor,
+        masks_j: Tensor,
         prefix: str = "train",
-        beta: float = 1e-5,
     ) -> Tuple[Tensor, Dict[str, Tensor]]:
-        """
-        Compute VAE loss optimized for latent diffusion with improved stability and logging
-        """
-        # Reconstruction loss
-        recon_loss = F.mse_loss(reconstructed, original_tokens)
+        """Compute contrastive and reconstruction loss."""
+        latent_i, recon_i, projected_i = transform_output_i
+        latent_j, recon_j, projected_j = transform_output_j
 
-        # Reshape and normalize latent
-        batch_size = latent.shape[0]
-        latent_flat = latent.reshape(batch_size, -1)
+        tokens = torch.cat([input_tokens_i, input_tokens_j], dim=0)
+        reconstructions = torch.cat([recon_i, recon_j], dim=0)
+        masks = torch.cat([masks_i, masks_j], dim=0)
 
-        # KL loss with improved numerical stability
-        kl_loss = 0.5 * torch.mean(
-            torch.sum(latent_flat.pow(2), dim=1)  # E[z^2] term
-            + math.log(2 * math.pi)  # Constant term, moved outside sum
-            + 1  # log(σ²) term for standard normal
+        loss_conf = self.loss_func(
+            z_i=projected_i, z_j=projected_j, y=reconstructions, t=tokens, m=masks
         )
 
-        # Scale losses
-        total_loss = recon_loss + beta * kl_loss
-
-        # Detailed logging dictionary
-        loss_dict = {
-            f"{prefix}/loss_recon": recon_loss,
-            f"{prefix}/loss_kl": kl_loss,
-            f"{prefix}/loss": total_loss,
+        loss_conv_conf = {
+            f"{prefix}/loss_contrast": loss_conf["loss/loss_contrast"],
+            f"{prefix}/loss_recon": loss_conf["loss/loss_recon"],
+            f"{prefix}/loss": loss_conf["loss/loss"],
         }
-        return total_loss, loss_dict
+
+        return loss_conv_conf[f"{prefix}/loss"], loss_conv_conf
 
     def training_step(self, batch: List[Tensor], batch_idx: int) -> Tensor:
         original_tokens, original_masks, original_positions = batch
-        latent, reconstructed_tokens = self.forward(original_tokens, original_positions)
+        tokens_i, masks_i, positions_i, tokens_j, masks_j, positions_j = (
+            self.train_transforms(original_tokens, original_masks, original_positions)
+        )
+        batch_size = original_tokens.shape[0]
+
+        # FORWARD PASS
+        # I am combining the two views into one batch to make it faster
+        combined_tokens = torch.cat([tokens_i, tokens_j], dim=0)
+        combined_positions = torch.cat([positions_i, positions_j], dim=0)
+        output1, output2, output3 = self.forward(combined_tokens, combined_positions)
+        transform_output_i = (
+            output1[:batch_size],
+            output2[:batch_size],
+            output3[:batch_size],
+        )
+        transform_output_j = (
+            output1[batch_size:],
+            output2[batch_size:],
+            output3[batch_size:],
+        )
 
         # Compute loss
         loss, log_dict = self.compute_loss(
-            latent,
-            reconstructed_tokens,
-            original_tokens,
+            transform_output_i,
+            transform_output_j,
+            tokens_i,
+            tokens_j,
+            masks_i,
+            masks_j,
             prefix="train",
         )
 
         self.log_dict(log_dict, prog_bar=True, sync_dist=True)
 
-        if batch_idx == 0:
-            self.log_latent_distribution(latent, "train")
+        if (
+            batch_idx == 0
+            and self.current_epoch % self.config.logging.sample_every_n_epochs == 0
+        ):
+            # Log gradient norm
+            total_norm = 0.0
+            for p in self.parameters():
+                if p.grad is not None:
+                    param_norm = p.grad.data.norm(2)
+                    total_norm += param_norm.item() ** 2
+            total_norm = total_norm**0.5
+            self.log("train/grad_norm", total_norm, prog_bar=False, sync_dist=True)
 
-            if self.current_epoch % self.config.logging.sample_every_n_epochs == 0:
-                self.visualize_reconstructions(
-                    self.fixed_train_samples, "train", batch_idx
-                )
+            # Visualize both fixed samples and current batch
+            self.visualize_reconstructions(self.fixed_train_samples, "train", batch_idx)
 
         return loss
 
+    # FIXME adjust
     def validation_step(self, batch, batch_idx: int) -> dict[str, Tensor]:
         original_tokens, original_masks, original_positions = batch
-        latent, reconstructed_tokens = self.forward(original_tokens, original_positions)
+        tokens_i, masks_i, positions_i, tokens_j, masks_j, positions_j = (
+            self.val_transforms(original_tokens, original_masks, original_positions)
+        )
+        batch_size = original_tokens.shape[0]
+
+        # FORWARD PASS
+        # I am combining the two views into one batch to make it faster
+        combined_tokens = torch.cat([tokens_i, tokens_j], dim=0)
+        combined_positions = torch.cat([positions_i, positions_j], dim=0)
+        output1, output2, output3 = self.forward(combined_tokens, combined_positions)
+        transform_output_i = (
+            output1[:batch_size],
+            output2[:batch_size],
+            output3[:batch_size],
+        )
+        transform_output_j = (
+            output1[batch_size:],
+            output2[batch_size:],
+            output3[batch_size:],
+        )
 
         # Compute loss
         val_loss, val_log_dict = self.compute_loss(
-            latent,
-            reconstructed_tokens,
-            original_tokens,
+            transform_output_i,
+            transform_output_j,
+            tokens_i,
+            tokens_j,
+            masks_i,
+            masks_j,
             prefix="val",
         )
 
         # Log validation metrics
         self.log_dict(val_log_dict, prog_bar=True, sync_dist=True)
 
-        if batch_idx == 0:
-            self.log_latent_distribution(latent, "val")
-
-            if self.current_epoch % self.config.logging.sample_every_n_epochs == 0:
-                self.visualize_reconstructions(self.fixed_val_samples, "val", batch_idx)
+        if (
+            batch_idx == 0
+            and self.current_epoch % self.config.logging.sample_every_n_epochs == 0
+        ):
+            self.visualize_reconstructions(self.fixed_val_samples, "val", batch_idx)
 
         return val_log_dict
 

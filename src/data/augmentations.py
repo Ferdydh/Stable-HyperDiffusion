@@ -120,6 +120,11 @@ def create_transform(
         # else:
         #     tensor, mask, pos = cut_window(tensor, mask, pos, window_size)
 
+        # (batch_size * 65) * 1 * 33
+
+        # batch_size * 65 * 33 -> (65*8)
+        # batch_size * window_size * 33 -> variable_length * variable_token
+
         # Create two views through permutation or copying
         if use_permutation:
             tensor1, mask1, pos1 = select_permutation(
@@ -132,17 +137,24 @@ def create_transform(
             tensor1, mask1, pos1 = tensor.clone(), mask.clone(), pos.clone()
             tensor2, mask2, pos2 = tensor.clone(), mask.clone(), pos.clone()
 
-        # Apply noise augmentation
-        if noise_view1 > 0:
-            tensor1 = add_noise(tensor1, noise_view1)
-        if noise_view2 > 0:
-            tensor2 = add_noise(tensor2, noise_view2)
+        # We (DONT?) need permutation invariance
+        # Window < Actual tokens
+        # If we look at the token input, we have to look at which position is the token in the original weight
+        # ------(---)--------
+        # ABCDEFGHIJ-KLMNO-PQRST
+        # ABCDEFGHIJ-PQRST-KLMNO <- token already has the position
 
-        # Apply erasing augmentation
-        if erase_view1 is not None:
-            tensor1 = apply_erasing(tensor1, erase_view1)
-        if erase_view2 is not None:
-            tensor2 = apply_erasing(tensor2, erase_view2)
+        # Apply noise augmentation
+        # if noise_view1 > 0:
+        #     tensor1 = add_noise(tensor1, noise_view1)
+        # if noise_view2 > 0:
+        #     tensor2 = add_noise(tensor2, noise_view2)
+
+        # # Apply erasing augmentation
+        # if erase_view1 is not None:
+        #     tensor1 = apply_erasing(tensor1, erase_view1)
+        # if erase_view2 is not None:
+        #     tensor2 = apply_erasing(tensor2, erase_view2)
 
         return tensor1, mask1, pos1, tensor2, mask2, pos2
 
