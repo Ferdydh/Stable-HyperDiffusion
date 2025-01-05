@@ -25,7 +25,7 @@ if __name__ == "__main__":
     config.model.d_model = 128  # 256 -> 4
     config.model.latent_dim = 32
 
-    config.early_stopping.patience = 300
+    config.early_stopping.patience = 900
     config.trainer.max_epochs = 1000
     config.scheduler.warmup_ratio = 0.05
 
