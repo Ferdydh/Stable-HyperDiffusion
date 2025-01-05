@@ -269,7 +269,8 @@ class Autoencoder(pl.LightningModule):
         )
 
         # Scale losses
-        total_loss = recon_loss + beta * kl_loss
+        # total_loss = recon_loss + beta * kl_loss
+        total_loss = recon_loss
 
         # Detailed logging dictionary
         loss_dict = {
