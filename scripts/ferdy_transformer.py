@@ -34,7 +34,7 @@ if __name__ == "__main__":
     config.data.batch_size = 8
     config.data.split_ratio = 0.8
     config.data.sample_limit = 10
-    config.data = DataConfig.full()
+    # config.data = DataConfig.full()
 
     # config.scheduler.eta_min = 1e-4
     # config.scheduler.T_max = 1000
