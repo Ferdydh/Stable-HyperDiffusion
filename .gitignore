@@ -1,0 +1,8 @@
+.venv/
+data/
+logs/
+__pycache__
+mnist-inrs
+*.egg-info
+.vscode
+uv.lock
