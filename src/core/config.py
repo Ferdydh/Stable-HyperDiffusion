@@ -95,6 +95,9 @@ class TransformerModelConfig(BaseModelConfig):
     latent_dim: int
     output_dim: int
     projection_dim: int
+    beta: float = 0.1
+    recon_scale: float = 1.0e-4
+    use_mask: bool = True
 
     @classmethod
     def default(cls) -> "TransformerModelConfig":
@@ -121,6 +124,7 @@ class DataConfig:
     num_workers: int = 4
     sample_limit: Optional[int] = None
     split_ratio: float = 0.9  # Train-Val split ratio of 90-10%
+    load_from_txt: bool = False
 
     @classmethod
     def sanity(cls) -> "DataConfig":

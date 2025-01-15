@@ -227,6 +227,7 @@ class Autoencoder(pl.LightningModule):
         self.logger.experiment.log(v)
         self.logger.experiment.log(t)
 
+    #@torch.compile
     def forward(
         self,
         input_tokens: Tensor,
@@ -259,15 +260,17 @@ class Autoencoder(pl.LightningModule):
         self,
         reconstructed: Tensor,
         original: Tensor,
+        mask: Tensor,
         mu: Tensor,
         logvar: Tensor,
-        prefix: str = "train",
-        beta: float = 0.1,
+        prefix: str = "train"
     ) -> Tuple[Tensor, Dict[str, Tensor]]:
         """
         Compute VAE loss optimized for latent diffusion with improved stability and logging
         """
-
+        
+        if self.config.model.use_mask:
+            reconstructed = mask * reconstructed
         # Reconstruction loss (MSE)
         recon_loss = F.mse_loss(reconstructed, original)
 
@@ -279,7 +282,7 @@ class Autoencoder(pl.LightningModule):
 
         # Total loss with β weighting
         # Recon loss goal is 1e-6
-        total_loss = recon_loss * 1e4 + beta * kl_loss
+        total_loss = recon_loss * self.config.model.recon_scale + self.config.model.beta * kl_loss
 
         # Detailed logging dictionary
         loss_dict = {
@@ -289,14 +292,19 @@ class Autoencoder(pl.LightningModule):
         }
         return total_loss, loss_dict
 
+    #@torch.compile
     def training_step(self, batch: List[Tensor], batch_idx: int) -> Tensor:
         original_tokens, original_masks, original_positions = batch
+        original_tokens = original_tokens.to(self.device)
+        original_masks = original_masks.to(self.device)
+        original_positions = original_positions.to(self.device)
         reconstructed, z, mu, logvar = self.forward(original_tokens, original_positions)
 
         # Compute loss
         loss, log_dict = self.compute_loss(
             reconstructed,
             original_tokens,
+            original_masks,
             mu,
             logvar,
             prefix="train",
@@ -314,14 +322,19 @@ class Autoencoder(pl.LightningModule):
 
         return loss
 
+    #@torch.compile
     def validation_step(self, batch, batch_idx: int) -> dict[str, Tensor]:
         original_tokens, original_masks, original_positions = batch
+        original_tokens = original_tokens.to(self.device)
+        original_masks = original_masks.to(self.device)
+        original_positions = original_positions.to(self.device)
         reconstructed, z, mu, logvar = self.forward(original_tokens, original_positions)
 
         # Compute loss
         loss, log_dict = self.compute_loss(
             reconstructed,
             original_tokens,
+            original_masks,
             mu,
             logvar,
             prefix="val",

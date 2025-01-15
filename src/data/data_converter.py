@@ -152,9 +152,9 @@ def weights_to_tokens(
             mask = mask.view(-1, tokensize).to(torch.bool)
 
             # extend out with new tokens, zero's (and only entry) is a list
-            if device:
-                w = w.to(device)
-                mask = mask.to(device)
+            #if device:
+            #    w = w.to(device)
+            #    mask = mask.to(device)
             tokens.append(w)
             masks.append(mask)
 
@@ -174,8 +174,8 @@ def weights_to_tokens(
     #     pos = pos.to(torch.int)
     # else:
     #     pos = pos.to(torch.int16)
-    if device:
-        pos.to(device)
+    #if device:
+    #    pos.to(device)
     if return_mask:
         return tokens, masks, pos
     else:

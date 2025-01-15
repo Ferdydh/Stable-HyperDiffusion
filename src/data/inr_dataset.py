@@ -25,7 +25,7 @@ class INRDataset(Dataset):
 
     def __getitem__(self, index):
         file_path = self.files[index]
-        state_dict = torch.load(file_path, map_location=self.device, weights_only=True)
+        state_dict = torch.load(file_path, map_location="cpu", weights_only=True)
 
         if self.is_for_mlp:
             return weights_to_flattened_weights(state_dict)
@@ -81,18 +81,39 @@ class DataHandler(pl.LightningDataModule):
     def setup(self, stage: Optional[str] = None):
         # Create split datasets
         if stage == "fit" or stage is None:
-            # Calculate split sizes
-            train_size = int(len(self.files) * self.split_ratio)
-            val_size = len(self.files) - train_size
 
-            if train_size == len(self.files) or val_size == 0 or train_size == 0:
-                # This should only happen if we have sample_limit=1 or split_ratio=1.0
-                train_files = self.files
-                val_files = self.files
+            # Path to split files
+            output_train = os.path.join("data", str(self.config.data.sample_limit) + "_train.lst")
+            output_val = os.path.join("data", str(self.config.data.sample_limit) + "_val.lst")
+       
+            # Load from split files if they exist
+            if self.config.data.load_from_txt and os.path.exists(output_train) and os.path.exists(output_val):
+                with open(output_train, "r") as f:
+                    train_files = [line.strip() for line in f]
+                with open(output_val, "r") as f:
+                    val_files = [line.strip() for line in f]
             else:
-                train_files, val_files = random_split(
-                    self.files, [train_size, val_size]
-                )
+                # Calculate split sizes
+                train_size = int(len(self.files) * self.split_ratio)
+                val_size = len(self.files) - train_size
+
+                if train_size == len(self.files) or val_size == 0 or train_size == 0:
+                    # This should only happen if we have sample_limit=1 or split_ratio=1.0
+                    train_files = self.files
+                    val_files = self.files
+                else:
+                    train_files, val_files = random_split(
+                        self.files, [train_size, val_size]
+                    )
+                    
+                    # Save the train and val split for reproducibility
+                    if not os.path.exists(output_train) and not os.path.exists(output_val):
+                        with open(output_train, "w") as f:
+                            for sample in train_files:
+                                f.write(str(sample) + "\n")
+                        with open(output_val, "w") as f:
+                            for sample in val_files:
+                                f.write(str(sample) + "\n")
 
             self.train_dataset = INRDataset(
                 files=train_files, device=self.config.device, is_for_mlp=self.is_for_mlp
@@ -122,6 +143,7 @@ class DataHandler(pl.LightningDataModule):
             num_workers=self.config.data.num_workers,
             shuffle=True,
             persistent_workers=True,
+            pin_memory=True,
             drop_last=False,
         )
 
@@ -132,6 +154,7 @@ class DataHandler(pl.LightningDataModule):
             num_workers=self.config.data.num_workers,
             shuffle=False,
             persistent_workers=True,
+            pin_memory=True,
             drop_last=False,
         )
 
