@@ -1,19 +1,13 @@
 """
 This file contains the G.pt model and its building blocks (minGPT without masking, etc.).
 """
+
 import math
 from copy import deepcopy
 
-import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-
-from src.models.diffusion.embedder import Embedder
-#from mlp_models import MLP
-#import sys
-#sys.path.append("src/data")
-#from data.inr import INR
 
 
 class SelfAttention(nn.Module):
@@ -238,13 +232,13 @@ class GPT(nn.Module):
         param_dict = {pn: p for pn, p in nn_module.named_parameters()}
         inter_params = decay & no_decay
         union_params = decay | no_decay
-        assert (
-            len(inter_params) == 0
-        ), "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)
-        assert (
-            len(param_dict.keys() - union_params) == 0
-        ), "parameters %s were not separated into either decay/no_decay set!" % (
-            str(param_dict.keys() - union_params),
+        assert len(inter_params) == 0, (
+            "parameters %s made it into both decay/no_decay sets!"
+            % (str(inter_params),)
+        )
+        assert len(param_dict.keys() - union_params) == 0, (
+            "parameters %s were not separated into either decay/no_decay set!"
+            % (str(param_dict.keys() - union_params),)
         )
 
         # create the pytorch optimizer object
@@ -353,9 +347,9 @@ class GPT(nn.Module):
     def forward(self, x):
         embeddings = self.encode_parameters(x)
         b, t, d = embeddings.size()
-        assert (
-            t == self.block_size
-        ), f"Expected {self.block_size} tokens on dim=1, but got {t}"
+        assert t == self.block_size, (
+            f"Expected {self.block_size} tokens on dim=1, but got {t}"
+        )
 
         # forward the GPT model
         position_embeddings = self.pos_emb[
@@ -380,7 +374,8 @@ class FrequencyEmbedder(nn.Module):
         N = x.size(0)
         if x.dim() == 1:  # (N,)
             x = x.unsqueeze(1)  # (N, D) where D=1
-        x_unsqueezed = x.unsqueeze(-1).to("cuda", torch.float)  # (N, D, 1)
+        x_unsqueezed = x.unsqueeze(-1)  # (N, D, 1)
+        # x_unsqueezed = x.unsqueeze(-1).to("cuda", torch.float)  # (N, D, 1)
         scaled = (
             self.frequencies.view(1, 1, -1) * x_unsqueezed
         )  # (N, D, num_frequencies)
@@ -393,7 +388,6 @@ class FrequencyEmbedder(nn.Module):
 
 
 class Transformer(nn.Module):
-
     """
     The G.pt model.
     """
@@ -527,7 +521,7 @@ class Transformer(nn.Module):
         return output
 
 
-#if __name__ == "__main__":
+# if __name__ == "__main__":
 #    mlp = INR(
 #        up_scale=16
 #    )

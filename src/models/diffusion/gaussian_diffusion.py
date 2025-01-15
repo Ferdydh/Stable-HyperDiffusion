@@ -32,7 +32,7 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
         beta_start = scale * 0.0001
         beta_end = scale * 0.02
         return np.linspace(
-            beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64
+            beta_start, beta_end, num_diffusion_timesteps, dtype=np.float32
         )
     elif schedule_name == "cosine":
         return betas_for_alpha_bar(
@@ -132,7 +132,7 @@ class GaussianDiffusion:
         self.rescale_timesteps = rescale_timesteps
         self.diff_module = diff_pl_module
         # Use float64 for accuracy.
-        betas = np.array(betas, dtype=np.float64)
+        betas = np.array(betas, dtype=np.float32)
         self.betas = betas
 
         assert len(betas.shape) == 1, "betas must be 1-D"
@@ -750,9 +750,7 @@ class GaussianDiffusion:
         output = th.where((t == 0), decoder_nll, kl)
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
-    def training_losses(
-        self, model, x_start, t, model_kwargs=None, noise=None
-    ):
+    def training_losses(self, model, x_start, t, model_kwargs=None, noise=None):
         """
         Compute training losses for a single timestep.
 
@@ -915,7 +913,11 @@ def _extract_into_tensor(arr, timesteps, broadcast_shape):
                             dimension equal to the length of timesteps.
     :return: a tensor of shape [batch_size, 1, ...] where the shape has K dims.
     """
-    res = th.from_numpy(arr).to(device=timesteps.device)[timesteps].float()
+    res = (
+        th.from_numpy(arr)
+        .to(device=timesteps.device, dtype=torch.float32)[timesteps]
+        .float()
+    )
     while len(res.shape) < len(broadcast_shape):
         res = res[..., None]
     return res.expand(broadcast_shape)

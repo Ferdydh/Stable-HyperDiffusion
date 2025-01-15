@@ -186,6 +186,7 @@ class SchedulerConfig:
 @dataclass
 class TrainerConfig:
     max_epochs: int
+    # precision: Literal[16, 32]
     precision: Literal[16, 32, 64]
     gradient_clip_val: float
     accumulate_grad_batches: int
@@ -355,7 +356,7 @@ class AugmentationConfig:
             multi_windows_train=None,
             apply_augmentations=True,
         )
-    
+
     @classmethod
     def no_aug(cls) -> "AugmentationConfig":
         return cls(
@@ -438,6 +439,7 @@ class TransformerExperimentConfig(BaseExperimentConfig):
 @dataclass
 class MLPConfig:
     """Configuration for MLP architecture"""
+
     model_type: str
     out_size: int
     hidden_neurons: List[int]
@@ -457,13 +459,14 @@ class MLPConfig:
             out_act="sigmoid",
             multires=4,
             use_leaky_relu=False,
-            move=False
+            move=False,
         )
 
 
 @dataclass
 class DiffusionConfig:
     """Configuration for diffusion model parameters"""
+
     model_mean_type: str
     model_var_type: str
     loss_type: str
@@ -471,14 +474,14 @@ class DiffusionConfig:
     @classmethod
     def default(cls) -> "DiffusionConfig":
         return cls(
-            model_mean_type="START_X",
-            model_var_type="FIXED_LARGE",
-            loss_type="MSE"
+            model_mean_type="START_X", model_var_type="FIXED_LARGE", loss_type="MSE"
         )
+
 
 @dataclass
 class TransformerConfig:
     """Configuration for transformer architecture"""
+
     n_embd: int
     n_layer: int
     n_head: int
@@ -494,9 +497,9 @@ class TransformerConfig:
             n_head=16,
             split_policy="layer_by_layer",
             use_global_residual=False,
-            condition="no"
+            condition="no",
         )
-    
+
     @classmethod
     def get_dict(cls, transformer_config: "TransformerConfig") -> Dict[str, Any]:
         return {
@@ -505,13 +508,14 @@ class TransformerConfig:
             "n_head": transformer_config.n_head,
             "split_policy": transformer_config.split_policy,
             "use_global_residual": transformer_config.use_global_residual,
-            "condition": transformer_config.condition
+            "condition": transformer_config.condition,
         }
 
 
 @dataclass
 class ValidationConfig:
     """Configuration for validation parameters"""
+
     num_points: int
     num_samples_metrics: int
     num_samples_visualization: int
@@ -522,14 +526,15 @@ class ValidationConfig:
         return cls(
             num_points=2048,
             num_samples_metrics=60,
-            num_samples_visualization = 4,
-            visualize_every_n_epochs = 20
+            num_samples_visualization=4,
+            visualize_every_n_epochs=20,
         )
 
 
 @dataclass
 class DiffusionExperimentConfig(BaseExperimentConfig):
     """Configuration for diffusion experiments"""
+
     method: str
     calculate_metric_on_test: bool
     dedup: bool
@@ -559,16 +564,15 @@ class DiffusionExperimentConfig(BaseExperimentConfig):
     def sanity(cls) -> "DiffusionExperimentConfig":
         return cls(
             # Base config defaults
-            #data=DataConfig.sanity(),
-            #optimizer=OptimizerConfig.default(),
-            #scheduler=SchedulerConfig.cosine_default(),
-            #trainer=TrainerConfig.sanity(),
-            #logging=LoggingConfig.sanity(),
-            #checkpoint=CheckpointConfig.default(),
-            #early_stopping=EarlyStoppingConfig.default(),
-            #augmentations=AugmentationConfig.default(),
-            #device=get_device(),
-            
+            # data=DataConfig.sanity(),
+            # optimizer=OptimizerConfig.default(),
+            # scheduler=SchedulerConfig.cosine_default(),
+            # trainer=TrainerConfig.sanity(),
+            # logging=LoggingConfig.sanity(),
+            # checkpoint=CheckpointConfig.default(),
+            # early_stopping=EarlyStoppingConfig.default(),
+            # augmentations=AugmentationConfig.default(),
+            # device=get_device(),
             # Diffusion-specific defaults
             method="hyper_3d",
             calculate_metric_on_test=True,
@@ -594,7 +598,6 @@ class DiffusionExperimentConfig(BaseExperimentConfig):
             diff_config=DiffusionConfig.default(),
             transformer_config=TransformerConfig.default(),
             autoencoder_checkpoint=None,
-
             data=DataConfig.sanity(),
             optimizer=OptimizerConfig.default(),
             scheduler=SchedulerConfig.cosine_default(),
