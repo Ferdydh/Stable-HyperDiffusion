@@ -6,4 +6,4 @@ mnist-inrs
 *.egg-info
 .vscode
 uv.lock
-diffusion_logs
+# diffusion_logs
