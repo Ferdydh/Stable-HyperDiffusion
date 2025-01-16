@@ -11,21 +11,38 @@ from src.models.diffusion.gaussian_diffusion import (
     ModelVarType,
 )
 
-from src.core.config import DiffusionExperimentConfig
+from src.core.config import DiffusionExperimentConfig, TransformerConfig
 from src.models.utils import flattened_weights_to_image_dict
 from src.data.inr import INR
 from src.models.diffusion.metrics import Metrics
+from src.models.diffusion.transformer import Transformer
+
+
+def initialize_transformer(config: DiffusionExperimentConfig) -> Transformer:
+    mlp = INR(up_scale=16)
+    state_dict = mlp.state_dict()
+    layers = []
+    layer_names = []
+    for l in state_dict:
+        shape = state_dict[l].shape
+        layers.append(np.prod(shape))
+        layer_names.append(l)
+
+    return Transformer(
+        layers,
+        layer_names,
+        **(TransformerConfig.get_dict(config.transformer_config)),
+    )
 
 
 class HyperDiffusion(pl.LightningModule):
     def __init__(
         self,
-        model,
         config: DiffusionExperimentConfig,
         image_shape,
     ):
         super().__init__()
-        self.model = model
+        self.model = initialize_transformer(config)
         self.config = config
         self.ae_model = None
 

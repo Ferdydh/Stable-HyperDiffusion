@@ -13,7 +13,13 @@ import torch
 import torch as th
 
 from .losses import discretized_gaussian_log_likelihood, normal_kl
-from .nn import mean_flat
+
+
+def mean_flat(tensor: torch.Tensor):
+    """
+    Take the mean over all non-batch dimensions.
+    """
+    return tensor.mean(dim=list(range(1, len(tensor.shape))))
 
 
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):

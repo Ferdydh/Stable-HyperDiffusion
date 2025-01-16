@@ -1,11 +1,9 @@
-import numpy as np
 from dataclasses import asdict
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     LearningRateMonitor,
-    EarlyStopping,
 )
 import os
 import torch
@@ -13,20 +11,10 @@ import torch
 import wandb
 from datetime import datetime
 import atexit
-from src.core.config import (
-    DiffusionExperimentConfig,
-    TransformerExperimentConfig,
-    TransformerConfig,
-)
 
-from src.data.inr_dataset import (
-    DataHandler,
-)
-from src.data.inr import (
-    INR,
-)
+from src.core.config import DiffusionExperimentConfig, TransformerExperimentConfig
+from src.data.inr_dataset import DataHandler
 from src.models.autoencoder.pl_transformer import Autoencoder
-from src.models.diffusion.transformer import Transformer
 from models.diffusion.pl_hyperdiffusion import HyperDiffusion
 
 
@@ -63,30 +51,12 @@ def train(
             name=config.logging.run_name,
             log_model=config.logging.log_model,
             save_dir=config.logging.save_dir,
-            settings=wandb.Settings(
-                start_method="thread"
-            ),  # , _disable_stats=True, _disable_meta=True),
+            settings=wandb.Settings(start_method="thread"),
             dir="diffusion_logs",
         )
 
         # Log hyperparameters and config file
         wandb_logger.log_hyperparams(asdict(config))
-
-        mlp = INR(up_scale=16)
-        state_dict = mlp.state_dict()
-        layers = []
-        layer_names = []
-        for l in state_dict:
-            shape = state_dict[l].shape
-            layers.append(np.prod(shape))
-            layer_names.append(l)
-
-        # Initialize transformer
-        model = Transformer(
-            layers,
-            layer_names,
-            **(TransformerConfig.get_dict(config.transformer_config)),
-        )
 
         # Initialize data handler
         data_handler = DataHandler(config)
@@ -103,7 +73,7 @@ def train(
 
         # Initialize model
         diffuser_opt = HyperDiffusion(
-            model, config, next(iter(data_handler.train_dataloader())).shape
+            config, next(iter(data_handler.train_dataloader())).shape
         )
 
         # diffuser_opt = torch.compile(diffuser)
@@ -183,9 +153,7 @@ def train(
         # Add this right before trainer.fit()
         wandb.require("service")
 
-        if config.mode == "train":
-            # Train model
-            trainer.fit(model=diffuser_opt, datamodule=data_handler)
+        trainer.fit(model=diffuser_opt, datamodule=data_handler)
         # best_model_save_path is the path to saved best model
         # trainer.test(
         #    diffuser,

@@ -1,13 +1,14 @@
+import torch
 from torchmetrics.image.fid import FrechetInceptionDistance
 
-fid = FrechetInceptionDistance(input_img_size=(3,28,28))
+fid = FrechetInceptionDistance(input_img_size=(3, 28, 28))
 
 
-class Metrics():
+class Metrics:
     def __init__(self, device):
-        self.fid = FrechetInceptionDistance(input_img_size=(3,28,28))
+        self.fid = FrechetInceptionDistance(input_img_size=(3, 28, 28))
 
-    def _calculate_fid(self, real_pcs, gen_pcs):
+    def _calculate_fid(self, real_pcs: torch.Tensor, gen_pcs: torch.Tensor):
         real_pcs = real_pcs.unsqueeze(1)
         real_pcs = real_pcs.repeat(1, 3, 1, 1).cpu()
         gen_pcs = gen_pcs.unsqueeze(1)

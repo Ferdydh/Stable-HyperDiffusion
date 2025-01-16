@@ -519,26 +519,3 @@ class Transformer(nn.Module):
         if self.use_global_residual:
             output = output + x_prev
         return output
-
-
-# if __name__ == "__main__":
-#    mlp = INR(
-#        up_scale=16
-#    )
-
-#    state_dict = mlp.state_dict()
-#    layers = []
-#    layer_names = []
-#    input = []
-#    for l in state_dict:
-#        shape = state_dict[l].shape
-#        layers.append(np.prod(shape))
-#        layer_names.append(l)
-#        input.append(state_dict[l].flatten())
-#    input = torch.hstack(input).unsqueeze(0).cuda()
-
-#    net = Transformer(layers, layer_names, split_policy="layer_by_layer").cuda()
-#    t = torch.randint(0, 1000, (len(input), 1)).cuda()
-#    print(input.shape, t.shape)
-#    out = net(input, t)
-#    print(out.shape)

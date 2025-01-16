@@ -1,4 +1,8 @@
-from src.core.config import DiffusionExperimentConfig, DataConfig, TransformerExperimentConfig
+from src.core.config import (
+    DiffusionExperimentConfig,
+    DataConfig,
+    TransformerExperimentConfig,
+)
 from src.core.train_diffusion import train
 
 if __name__ == "__main__":
@@ -12,7 +16,8 @@ if __name__ == "__main__":
     config.data = DataConfig.small()
     config.data.batch_size = 4
     config.data.sample_limit = 4
-    config.trainer.max_epochs = 500
+    config.trainer.max_epochs = 50
+    # config.trainer.max_epochs = 500
     config.val.num_samples_metrics = 4
     config.val.num_samples_visualization = 4
     config.visualize_every_n_epochs = 100
