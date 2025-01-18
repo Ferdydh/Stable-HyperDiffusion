@@ -6,10 +6,10 @@ import multiprocessing
 import random
 import pytorch_lightning as pl
 
-from src.core.config import (
-    BaseExperimentConfig,
-    MLPExperimentConfig,
-)
+# NOTE: ALWAYS USE src.core.XXX and not core.XXX
+# THIS IS BREAKING
+from src.core.config_diffusion import DiffusionExperimentConfig
+from src.core.config import MLPExperimentConfig, TransformerExperimentConfig
 from src.data.data_converter import weights_to_flattened_weights, weights_to_tokens
 from src.data.utils import get_files_from_selectors
 
@@ -18,16 +18,16 @@ multiprocessing.set_start_method("spawn", force=True)
 
 
 class INRDataset(Dataset):
-    def __init__(self, files, device, is_for_mlp):
+    def __init__(self, files, device, is_flattened):
         self.files = files
         self.device = device
-        self.is_for_mlp = is_for_mlp
+        self.is_flattened = is_flattened
 
     def __getitem__(self, index):
         file_path = self.files[index]
         state_dict = torch.load(file_path, map_location="cpu", weights_only=True)
 
-        if self.is_for_mlp:
+        if self.is_flattened:
             return weights_to_flattened_weights(state_dict)
 
         # For transformer, convert weights to tokens
@@ -49,7 +49,9 @@ class INRDataset(Dataset):
 class DataHandler(pl.LightningDataModule):
     def __init__(
         self,
-        config: BaseExperimentConfig,
+        config: DiffusionExperimentConfig
+        | MLPExperimentConfig
+        | TransformerExperimentConfig,
     ):
         super().__init__()
 
@@ -59,7 +61,9 @@ class DataHandler(pl.LightningDataModule):
         self.data_path = os.path.join(os.getcwd(), config.data.data_path)
 
         # this determines if the data is flattened or tokenized
-        self.is_for_mlp = isinstance(config, MLPExperimentConfig)
+        self.is_flattened = isinstance(config, MLPExperimentConfig) or isinstance(
+            config, DiffusionExperimentConfig
+        )
 
         self.files = get_files_from_selectors(self.data_path, [config.data.selector])
 
@@ -81,13 +85,20 @@ class DataHandler(pl.LightningDataModule):
     def setup(self, stage: Optional[str] = None):
         # Create split datasets
         if stage == "fit" or stage is None:
-
             # Path to split files
-            output_train = os.path.join("data", str(self.config.data.sample_limit) + "_train.lst")
-            output_val = os.path.join("data", str(self.config.data.sample_limit) + "_val.lst")
-       
+            output_train = os.path.join(
+                "data", str(self.config.data.sample_limit) + "_train.lst"
+            )
+            output_val = os.path.join(
+                "data", str(self.config.data.sample_limit) + "_val.lst"
+            )
+
             # Load from split files if they exist
-            if self.config.data.load_from_txt and os.path.exists(output_train) and os.path.exists(output_val):
+            if (
+                self.config.data.load_from_txt
+                and os.path.exists(output_train)
+                and os.path.exists(output_val)
+            ):
                 with open(output_train, "r") as f:
                     train_files = [line.strip() for line in f]
                 with open(output_val, "r") as f:
@@ -105,9 +116,11 @@ class DataHandler(pl.LightningDataModule):
                     train_files, val_files = random_split(
                         self.files, [train_size, val_size]
                     )
-                    
+
                     # Save the train and val split for reproducibility
-                    if not os.path.exists(output_train) and not os.path.exists(output_val):
+                    if not os.path.exists(output_train) and not os.path.exists(
+                        output_val
+                    ):
                         with open(output_train, "w") as f:
                             for sample in train_files:
                                 f.write(str(sample) + "\n")
@@ -116,10 +129,14 @@ class DataHandler(pl.LightningDataModule):
                                 f.write(str(sample) + "\n")
 
             self.train_dataset = INRDataset(
-                files=train_files, device=self.config.device, is_for_mlp=self.is_for_mlp
+                files=train_files,
+                device=self.config.device,
+                is_flattened=self.is_flattened,
             )
             self.val_dataset = INRDataset(
-                files=val_files, device=self.config.device, is_for_mlp=self.is_for_mlp
+                files=val_files,
+                device=self.config.device,
+                is_flattened=self.is_flattened,
             )
             print(f"Train size: {len(self.train_dataset)}")
             print(f"Val size: {len(self.val_dataset)}")

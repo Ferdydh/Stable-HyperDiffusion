@@ -176,16 +176,17 @@ class OptimizerConfig:
 class SchedulerConfig:
     warmup_ratio: float
     # name: str
-    # T_max: Optional[int] = None
-    # eta_min: Optional[float] = None
+    T_max: Optional[int] = None
+    eta_min: Optional[float] = None
 
     @classmethod
     def cosine_default(cls) -> "SchedulerConfig":
         return cls(
             warmup_ratio=0.1,
             # name="cosine",
-            # T_max=1000,
-            # eta_min=1e-6,
+            # TODO: fix this haha. this one is for cosine annealing, the one on top is for other schedulers
+            T_max=1000,
+            eta_min=1e-6,
         )
 
 
@@ -328,7 +329,6 @@ class MLPExperimentConfig(BaseExperimentConfig):
             logging=LoggingConfig.sanity(),
             checkpoint=CheckpointConfig.default(),
             early_stopping=EarlyStoppingConfig.default(),
-            augmentations=None,
             device=get_device(),
         )
 

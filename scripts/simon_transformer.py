@@ -12,7 +12,7 @@ if __name__ == "__main__":
     config.model.n_tokens = 65
     config.model.num_heads = 4
     config.model.num_layers = 4
-    config.model.d_model = 256   # 256 -> 4
+    config.model.d_model = 256  # 256 -> 4
     config.model.window_size = 16
     config.data.batch_size = 8
     config.data.sample_limit = None
@@ -20,7 +20,7 @@ if __name__ == "__main__":
     config.training.contrast = "simclr_dynamic"
     config.logging.log_every_n_steps = 1
     config.trainer.val_check_interval = 100
-    config.augmentations = AugmentationConfig.no_aug()
+    # config.augmentations = AugmentationConfig.no_aug()
 
     # Initialize model
     model = pl_transformer.Autoencoder(config)

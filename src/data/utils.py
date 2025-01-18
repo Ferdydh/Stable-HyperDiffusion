@@ -1,6 +1,10 @@
 from typing import List
 import os
 
+from data.data_converter import flattened_weights_to_weights
+import numpy as np
+import torch
+
 from src.core.config import (
     DataSelector,
     DatasetType,
@@ -50,3 +54,24 @@ def get_files_from_selectors(data_path, selectors: List[DataSelector]) -> List[s
         all_files.extend(matching_files)
 
     return sorted(list(set(all_files)))
+
+
+def generate_images(samples, mlp, device):
+    image_samples = []
+    for weights in samples:
+        state_dict = flattened_weights_to_weights(weights, mlp)
+        mlp.load_state_dict(state_dict)
+        resolution = 28
+        x = np.linspace(-1, 1, resolution)
+        y = np.linspace(-1, 1, resolution)
+        grid_x, grid_y = np.meshgrid(x, y)
+
+        inputs = np.stack([grid_x.ravel(), grid_y.ravel()], axis=-1)
+        inputs_tensor = torch.tensor(inputs, dtype=torch.float32, device=device)
+
+        with torch.no_grad():
+            outputs = mlp(inputs_tensor)
+
+        image = outputs.reshape(resolution, resolution).to(torch.uint8)
+        image_samples.append(image)
+    return torch.stack(image_samples)

@@ -9,7 +9,7 @@ if __name__ == "__main__":
     config.early_stopping.patience = 30
     config.trainer.max_epochs = 300
     config.training.contrast = "simclr_dynamic"
-    config.augmentations = AugmentationConfig.no_aug()
+    # config.augmentations = AugmentationConfig.no_aug()
 
     # Initialize model
     model = pl_transformer.Autoencoder(config)
