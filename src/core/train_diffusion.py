@@ -114,7 +114,7 @@ def train(
         # Checkpoint callback
         checkpoint_callback = ModelCheckpoint(
             dirpath=checkpoint_path,
-            filename="best-loss-fid-{epoch:02d}-{train_loss:.2f}-{val_fid:.2f}",
+            filename="best-loss-{epoch:02d}-{train_loss:.2f}-{val_fid:.2f}",
             monitor="val/loss",
             # monitor=config.checkpoint.monitor,
             mode=config.checkpoint.mode,
@@ -128,16 +128,16 @@ def train(
         callbacks.append(lr_monitor)
 
         # Early stopping callback
-        early_stopping = EarlyStopping(
-            monitor=config.early_stopping.monitor,
-            min_delta=config.early_stopping.min_delta,
-            patience=config.early_stopping.patience,
-            verbose=True,
-            mode=config.early_stopping.mode,
-            check_on_train_epoch_end=False,
-            check_finite=True,  # Stop if loss becomes NaN or inf
-        )
-        callbacks.append(early_stopping)
+        # early_stopping = EarlyStopping(
+        #     monitor=config.early_stopping.monitor,
+        #     min_delta=config.early_stopping.min_delta,
+        #     patience=config.early_stopping.patience,
+        #     verbose=True,
+        #     mode=config.early_stopping.mode,
+        #     check_on_train_epoch_end=False,
+        #     check_finite=True,  # Stop if loss becomes NaN or inf
+        # )
+        # callbacks.append(early_stopping)
 
         # Initialize trainer
         trainer = pl.Trainer(

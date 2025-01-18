@@ -1,5 +1,6 @@
 from matplotlib import pyplot as plt
 from torch import Tensor
+import torch
 import wandb
 
 from src.core.visualize import plot_image
@@ -37,3 +38,40 @@ def weights_to_image_dict(weights: list, inr_model: INR, prefix, device):
         plt.close(recon_fig)
 
     return result_dict
+
+
+def duplicate_batch_to_size(batch):
+    """
+    Duplicates elements in a batch until it reaches the target batch size.
+    Works with both single tensors and dictionary/tuple batch structures.
+    """
+    target_batch_size = 1024
+
+    if isinstance(batch, torch.Tensor):
+        # For single tensor batch
+        current_size = len(batch)
+        if current_size >= target_batch_size:
+            return batch[:target_batch_size]
+
+        # Calculate how many full copies we need and the remainder
+        num_copies = target_batch_size // current_size
+        remainder = target_batch_size % current_size
+
+        # Create full copies and add the remainder
+        duplicated = batch.repeat(num_copies, *(1 for _ in range(len(batch.shape) - 1)))
+        if remainder > 0:
+            duplicated = torch.cat([duplicated, batch[:remainder]], dim=0)
+
+        return duplicated
+
+    elif isinstance(batch, dict):
+        # For dictionary of tensors
+        return {
+            k: duplicate_batch_to_size(v, target_batch_size) for k, v in batch.items()
+        }
+
+    elif isinstance(batch, (tuple, list)):
+        # For tuple/list of tensors
+        return type(batch)(duplicate_batch_to_size(x, target_batch_size) for x in batch)
+
+    raise TypeError(f"Unsupported batch type: {type(batch)}")

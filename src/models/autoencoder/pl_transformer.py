@@ -1,5 +1,4 @@
 from transformers import get_linear_schedule_with_warmup
-import numpy as np
 import torch.nn.functional as F
 from dataclasses import asdict
 import torch
@@ -227,7 +226,7 @@ class Autoencoder(pl.LightningModule):
         self.logger.experiment.log(v)
         self.logger.experiment.log(t)
 
-    #@torch.compile
+    # @torch.compile
     def forward(
         self,
         input_tokens: Tensor,
@@ -263,12 +262,12 @@ class Autoencoder(pl.LightningModule):
         mask: Tensor,
         mu: Tensor,
         logvar: Tensor,
-        prefix: str = "train"
+        prefix: str = "train",
     ) -> Tuple[Tensor, Dict[str, Tensor]]:
         """
         Compute VAE loss optimized for latent diffusion with improved stability and logging
         """
-        
+
         if self.config.model.use_mask:
             reconstructed = mask * reconstructed
         # Reconstruction loss (MSE)
@@ -282,7 +281,10 @@ class Autoencoder(pl.LightningModule):
 
         # Total loss with β weighting
         # Recon loss goal is 1e-6
-        total_loss = recon_loss * self.config.model.recon_scale + self.config.model.beta * kl_loss
+        total_loss = (
+            recon_loss * self.config.model.recon_scale
+            + self.config.model.beta * kl_loss
+        )
 
         # Detailed logging dictionary
         loss_dict = {
@@ -292,7 +294,7 @@ class Autoencoder(pl.LightningModule):
         }
         return total_loss, loss_dict
 
-    #@torch.compile
+    # @torch.compile
     def training_step(self, batch: List[Tensor], batch_idx: int) -> Tensor:
         original_tokens, original_masks, original_positions = batch
         original_tokens = original_tokens.to(self.device)
@@ -322,7 +324,7 @@ class Autoencoder(pl.LightningModule):
 
         return loss
 
-    #@torch.compile
+    # @torch.compile
     def validation_step(self, batch, batch_idx: int) -> dict[str, Tensor]:
         original_tokens, original_masks, original_positions = batch
         original_tokens = original_tokens.to(self.device)
