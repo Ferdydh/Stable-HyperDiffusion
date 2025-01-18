@@ -4,6 +4,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     LearningRateMonitor,
+    EarlyStopping,
 )
 import os
 import torch
@@ -16,7 +17,9 @@ from src.core.config import TransformerExperimentConfig
 from src.core.config_diffusion import DiffusionExperimentConfig
 from src.data.inr_dataset import DataHandler
 from src.models.autoencoder.pl_transformer import Autoencoder
-from models.diffusion.pl_diffusion import HyperDiffusion
+from src.models.diffusion.pl_diffusion import HyperDiffusion
+
+torch.set_float32_matmul_precision("high")
 
 
 def cleanup_wandb():
@@ -93,46 +96,48 @@ def train(
 
         # Setup callbacks
         callbacks = []
-        last_model_saver = ModelCheckpoint(
-            dirpath=checkpoint_path,
-            filename="last-{epoch:02d}-{train_loss:.2f}-{val_fid:.2f}",
-            save_on_train_epoch_end=True,
-        )
-        callbacks.append(last_model_saver)
-        best_fid_checkpoint = ModelCheckpoint(
-            save_top_k=1,
-            monitor="val/fid",
-            mode="min",
-            dirpath=checkpoint_path,
-            filename="best-val-fid-{epoch:02d}-{train_loss:.2f}-{val_fid:.2f}",
-        )
-        callbacks.append(best_fid_checkpoint)
+        # last_model_saver = ModelCheckpoint(
+        #     dirpath=checkpoint_path,
+        #     filename="last-{epoch:02d}-{train_loss:.2f}-{val_fid:.2f}",
+        #     save_on_train_epoch_end=True,
+        # )
+        # callbacks.append(last_model_saver)
+        # best_fid_checkpoint = ModelCheckpoint(
+        #     save_top_k=1,
+        #     monitor="val/fid",
+        #     mode="min",
+        #     dirpath=checkpoint_path,
+        #     filename="best-val-fid-{epoch:02d}-{train_loss:.2f}-{val_fid:.2f}",
+        # )
+        # callbacks.append(best_fid_checkpoint)
 
         # Checkpoint callback
-        # checkpoint_callback = ModelCheckpoint(
-        #    dirpath=config.checkpoint.dirpath,
-        #    filename=config.checkpoint.filename,
-        #    monitor=config.checkpoint.monitor,
-        #    mode=config.checkpoint.mode,
-        #    save_last=config.checkpoint.save_last,
-        #    save_top_k=config.checkpoint.save_top_k,
-        # )
-        # callbacks.append(checkpoint_callback)
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=checkpoint_path,
+            filename="best-loss-fid-{epoch:02d}-{train_loss:.2f}-{val_fid:.2f}",
+            monitor="val/loss",
+            # monitor=config.checkpoint.monitor,
+            mode=config.checkpoint.mode,
+            save_last=config.checkpoint.save_last,
+            save_top_k=config.checkpoint.save_top_k,
+        )
+        callbacks.append(checkpoint_callback)
 
         # Learning rate monitor
         lr_monitor = LearningRateMonitor(logging_interval="epoch")
         callbacks.append(lr_monitor)
 
         # Early stopping callback
-        # early_stopping = EarlyStopping(
-        #   monitor=config.early_stopping.monitor,
-        #   min_delta=config.early_stopping.min_delta,
-        #   patience=config.early_stopping.patience,
-        #  verbose=True,
-        #  mode=config.early_stopping.mode,
-        #  check_finite=True,  # Stop if loss becomes NaN or inf
-        # )
-        # callbacks.append(early_stopping)
+        early_stopping = EarlyStopping(
+            monitor=config.early_stopping.monitor,
+            min_delta=config.early_stopping.min_delta,
+            patience=config.early_stopping.patience,
+            verbose=True,
+            mode=config.early_stopping.mode,
+            check_on_train_epoch_end=False,
+            check_finite=True,  # Stop if loss becomes NaN or inf
+        )
+        callbacks.append(early_stopping)
 
         # Initialize trainer
         trainer = pl.Trainer(
@@ -143,11 +148,9 @@ def train(
             devices="auto",
             precision=config.trainer.precision,
             gradient_clip_val=config.trainer.gradient_clip_val,
-            # accumulate_grad_batches=config.trainer.accumulate_grad_batches,
-            # val_check_interval=config.trainer.val_check_interval,
-            # log_every_n_steps=config.trainer.log_every_n_steps,
-            check_val_every_n_epoch=config.val_fid_calculation_period,
-            num_sanity_val_steps=0,
+            log_every_n_steps=config.trainer.log_every_n_steps,
+            check_val_every_n_epoch=1,
+            # num_sanity_val_steps=0,
             accumulate_grad_batches=config.accumulate_grad_batches,
         )
 

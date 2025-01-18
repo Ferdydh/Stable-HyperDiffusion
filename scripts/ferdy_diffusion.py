@@ -20,8 +20,7 @@ if __name__ == "__main__":
     config.data.sample_limit = 4
     config.trainer.max_epochs = 50
     # config.trainer.max_epochs = 1000
-    config.val.num_samples_metrics = 4
-    config.val.num_samples_visualization = 4
+    config.num_samples_metrics = 4
     config.visualize_every_n_epochs = 100
     config.val_fid_calculation_period = 100
 
