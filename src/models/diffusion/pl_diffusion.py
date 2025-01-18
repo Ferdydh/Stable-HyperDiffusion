@@ -61,7 +61,7 @@ class HyperDiffusion(pl.LightningModule):
         self.demo_inr.eval()
 
         # Initialize FID metric
-        # self.fid = FrechetInceptionDistance(input_img_size=(3, 28, 28))
+        self.fid = FrechetInceptionDistance(input_img_size=(3, 28, 28))
 
     def on_train_start(self):
         # Sanity check visualization
@@ -114,38 +114,38 @@ class HyperDiffusion(pl.LightningModule):
             self.logger.experiment.log(vis_dict)
 
             # Calculate FID if it's time
-            # if self.current_epoch % self.config.val_fid_calculation_period == 0:
-            #     # Generate more samples for FID
-            #     samples = []
-            #     num_samples = self.config.num_samples_metrics
-            #     batch_size = min(100, num_samples)
+            if self.current_epoch % self.config.val_fid_calculation_period == 0:
+                # Generate more samples for FID
+                samples = []
+                num_samples = self.config.num_samples_metrics
+                batch_size = min(100, num_samples)
 
-            #     for idx in range(0, num_samples, batch_size):
-            #         curr_batch_size = min(batch_size, num_samples - idx)
-            #         sample = self.diff.ddim_sample_loop(
-            #             self.model, (curr_batch_size, *self.image_shape[1:])
-            #         )
-            #         samples.append(sample)
+                for idx in range(0, num_samples, batch_size):
+                    curr_batch_size = min(batch_size, num_samples - idx)
+                    sample = self.diff.ddim_sample_loop(
+                        self.model, (curr_batch_size, *self.image_shape[1:])
+                    )
+                    samples.append(sample)
 
-            #     fake_images = generate_images(
-            #         torch.vstack(samples), self.demo_inr, self.device
-            #     )
+                fake_images = generate_images(
+                    torch.vstack(samples), self.demo_inr, self.device
+                )
 
-            #     # Get training images for FID
-            #     train_dataset = self.trainer.train_dataloader.dataset
-            #     max_samples = min(len(train_dataset), num_samples)
-            #     real_samples = torch.vstack(
-            #         [train_dataset[i] for i in range(max_samples)]
-            #     )
-            #     real_images = generate_images(real_samples, self.demo_inr, self.device)
+                # Get training images for FID
+                train_dataset = self.trainer.train_dataloader.dataset
+                max_samples = min(len(train_dataset), num_samples)
+                real_samples = torch.vstack(
+                    [train_dataset[i] for i in range(max_samples)]
+                )
+                real_images = generate_images(real_samples, self.demo_inr, self.device)
 
-            #     # Compute and log FID
-            #     # Expand single channel to RGB
-            #     real_images = repeat(real_images, "b h w -> b c h w", c=3)
-            #     fake_images = repeat(fake_images, "b h w -> b c h w", c=3)
+                # Compute and log FID
+                # Expand single channel to RGB
+                real_images = repeat(real_images, "b h w -> b c h w", c=3)
+                fake_images = repeat(fake_images, "b h w -> b c h w", c=3)
 
-            #     self.fid.update(real_images.cuda(), real=True)
-            #     self.fid.update(fake_images.cuda(), real=False)
-            #     fid_score = self.fid.compute()
+                self.fid.update(real_images.cuda(), real=True)
+                self.fid.update(fake_images.cuda(), real=False)
+                fid_score = self.fid.compute()
 
-            #     self.log("metrics/fid", fid_score)
+                self.log("metrics/fid", fid_score)
