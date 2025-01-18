@@ -69,18 +69,6 @@ class HyperDiffusion(pl.LightningModule):
         # Initialize demo INR for visualization
         self.demo_inr = INR(up_scale=16).to(self.device)
 
-    def forward(self, images):
-        t = (
-            torch.randint(0, high=self.diff.num_timesteps, size=(images.shape[0],))
-            .long()
-            .to(self.device)
-        )
-        images = images * self.config.normalization_factor
-        x_t, e = self.diff.q_sample(images, t)
-        x_t = x_t.float()
-        e = e.float()
-        return self.model(x_t, t), e
-
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.config.lr)
         if self.config.use_scheduler:
