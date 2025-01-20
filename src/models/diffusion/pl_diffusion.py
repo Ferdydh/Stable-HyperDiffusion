@@ -1,3 +1,4 @@
+from dataclasses import asdict
 import numpy as np
 import pytorch_lightning as pl
 import torch
@@ -31,7 +32,7 @@ def initialize_transformer(config: DiffusionExperimentConfig) -> Transformer:
     return Transformer(
         layers,
         layer_names,
-        **(config.transformer_config.as_dict()),
+        **(asdict(config.transformer_config)),
     )
 
 
@@ -120,7 +121,6 @@ class HyperDiffusion(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        batch = duplicate_batch_to_size(batch)
         loss = self._compute_loss(batch)
         # More explicit logging
         self.log("val/loss", loss)

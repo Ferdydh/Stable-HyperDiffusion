@@ -39,6 +39,7 @@ class TransformerConfig:
     split_policy: str
     use_global_residual: bool
     condition: str
+    chunk_size: int | None = None
 
     @classmethod
     def default(cls) -> "TransformerConfig":
@@ -50,16 +51,6 @@ class TransformerConfig:
             use_global_residual=False,
             condition="no",
         )
-
-    def as_dict(self) -> Dict[str, Any]:
-        return {
-            "n_embd": self.n_embd,
-            "n_layer": self.n_layer,
-            "n_head": self.n_head,
-            "split_policy": self.split_policy,
-            "use_global_residual": self.use_global_residual,
-            "condition": self.condition,
-        }
 
 
 @dataclass
