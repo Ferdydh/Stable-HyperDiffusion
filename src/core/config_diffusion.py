@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from src.core.config import (
     BaseExperimentConfig,
@@ -12,33 +12,6 @@ from src.core.config import (
     TrainerConfig,
     get_device,
 )
-
-
-@dataclass
-class MLPConfig:
-    """Configuration for MLP architecture"""
-
-    model_type: str
-    out_size: int
-    hidden_neurons: List[int]
-    output_type: str
-    out_act: str
-    multires: int
-    use_leaky_relu: bool
-    move: bool
-
-    @classmethod
-    def default(cls) -> "MLPConfig":
-        return cls(
-            model_type="mlp_3d",
-            out_size=1,
-            hidden_neurons=[128, 128, 128],
-            output_type="occ",
-            out_act="sigmoid",
-            multires=4,
-            use_leaky_relu=False,
-            move=False,
-        )
 
 
 @dataclass
@@ -66,6 +39,7 @@ class TransformerConfig:
     split_policy: str
     use_global_residual: bool
     condition: str
+    chunk_size: int | None = None
 
     @classmethod
     def default(cls) -> "TransformerConfig":
@@ -78,61 +52,21 @@ class TransformerConfig:
             condition="no",
         )
 
-    def as_dict(self) -> Dict[str, Any]:
-        return {
-            "n_embd": self.n_embd,
-            "n_layer": self.n_layer,
-            "n_head": self.n_head,
-            "split_policy": self.split_policy,
-            "use_global_residual": self.use_global_residual,
-            "condition": self.condition,
-        }
-
-
-@dataclass
-class ValidationConfig:
-    """Configuration for validation parameters"""
-
-    num_points: int
-    num_samples_metrics: int
-    num_samples_visualization: int
-    visualize_every_n_epochs: int
-
-    @classmethod
-    def default(cls) -> "ValidationConfig":
-        return cls(
-            num_points=2048,
-            num_samples_metrics=60,
-            num_samples_visualization=4,
-            visualize_every_n_epochs=20,
-        )
-
 
 @dataclass
 class DiffusionExperimentConfig(BaseExperimentConfig):
     """Configuration for diffusion experiments"""
 
-    method: str
-    calculate_metric_on_test: bool
-    dedup: bool
+    num_samples_metrics: int
     test_sample_mult: float
-    filter_bad: bool
-    filter_bad_path: str
-    disable_wandb: bool
-    normalization_factor: int
     timesteps: int
-    use_scheduler: bool
     scheduler_step: int
     best_model_save_path: Optional[str]
     mode: str
-    model_resume_path: Optional[str]
-    sampling: str
     val_fid_calculation_period: int
     visualize_every_n_epochs: int
     lr: float
     accumulate_grad_batches: int
-    val: ValidationConfig
-    mlp_config: MLPConfig
     diff_config: DiffusionConfig
     transformer_config: TransformerConfig
     autoencoder_checkpoint: Optional[str]
@@ -141,40 +75,6 @@ class DiffusionExperimentConfig(BaseExperimentConfig):
     def sanity(cls) -> "DiffusionExperimentConfig":
         return cls(
             # Base config defaults
-            # data=DataConfig.sanity(),
-            # optimizer=OptimizerConfig.default(),
-            # scheduler=SchedulerConfig.cosine_default(),
-            # trainer=TrainerConfig.sanity(),
-            # logging=LoggingConfig.sanity(),
-            # checkpoint=CheckpointConfig.default(),
-            # early_stopping=EarlyStoppingConfig.default(),
-            # augmentations=AugmentationConfig.default(),
-            # device=get_device(),
-            # Diffusion-specific defaults
-            method="hyper_3d",
-            calculate_metric_on_test=True,
-            dedup=False,
-            test_sample_mult=1.1,
-            filter_bad=True,
-            filter_bad_path="./data/plane_problematic_shapes.txt",
-            disable_wandb=False,
-            normalization_factor=1,
-            timesteps=500,
-            use_scheduler=True,
-            scheduler_step=200,
-            best_model_save_path=None,
-            mode="train",
-            model_resume_path=None,
-            sampling="ddim",
-            val_fid_calculation_period=15,
-            visualize_every_n_epochs=100,
-            lr=0.0002,
-            accumulate_grad_batches=1,
-            val=ValidationConfig.default(),
-            mlp_config=MLPConfig.default(),
-            diff_config=DiffusionConfig.default(),
-            transformer_config=TransformerConfig.default(),
-            autoencoder_checkpoint=None,
             data=DataConfig.sanity(),
             optimizer=OptimizerConfig.default(),
             scheduler=SchedulerConfig.cosine_default(),
@@ -182,6 +82,21 @@ class DiffusionExperimentConfig(BaseExperimentConfig):
             logging=LoggingConfig.sanity(),
             checkpoint=CheckpointConfig.default(),
             early_stopping=EarlyStoppingConfig.default(),
-            # augmentations=AugmentationConfig.default(),
             device=get_device(),
+            #
+            #
+            # Diffusion-specific defaults
+            test_sample_mult=1.1,
+            timesteps=500,
+            scheduler_step=200,
+            best_model_save_path=None,
+            mode="train",
+            val_fid_calculation_period=15,
+            visualize_every_n_epochs=100,
+            lr=0.0002,
+            accumulate_grad_batches=1,
+            diff_config=DiffusionConfig.default(),
+            transformer_config=TransformerConfig.default(),
+            autoencoder_checkpoint=None,
+            num_samples_metrics=4,
         )

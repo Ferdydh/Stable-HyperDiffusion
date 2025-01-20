@@ -7,7 +7,8 @@ from src.core.config_diffusion import DiffusionExperimentConfig
 
 if __name__ == "__main__":
     config: DiffusionExperimentConfig = DiffusionExperimentConfig.sanity()
-    config.transformer_config.n_embd = 128
+    config.transformer_config.n_embd = 64
+    # config.transformer_config.n_embd = 128
     config.transformer_config.n_head = 8
     config.transformer_config.n_layer = 8
 
@@ -18,10 +19,9 @@ if __name__ == "__main__":
     config.data.sample_limit = 4
     config.trainer.max_epochs = 50
     # config.trainer.max_epochs = 500
-    config.val.num_samples_metrics = 4
-    config.val.num_samples_visualization = 4
-    config.visualize_every_n_epochs = 100
-    config.val_fid_calculation_period = 100
+    config.num_samples_metrics = 4
+    config.visualize_every_n_epochs = 10
+    config.val_fid_calculation_period = 10
 
     config_ae = TransformerExperimentConfig.default()
 
