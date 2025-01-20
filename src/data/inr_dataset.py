@@ -85,12 +85,13 @@ class DataHandler(pl.LightningDataModule):
     def setup(self, stage: Optional[str] = None):
         # Create split datasets
         if stage == "fit" or stage is None:
+            # TODO: improve split logging (also take into account the split ratio)
             # Path to split files
             output_train = os.path.join(
-                "data", str(self.config.data.sample_limit) + "_train.lst"
+                "data", str(self.config.data.sample_limit) + "_" + str(self.config.data.split_ratio) + "_train.lst"
             )
             output_val = os.path.join(
-                "data", str(self.config.data.sample_limit) + "_val.lst"
+                "data", str(self.config.data.sample_limit) + "_" + str(self.config.data.split_ratio) + "_val.lst"
             )
 
             # Load from split files if they exist
@@ -127,6 +128,15 @@ class DataHandler(pl.LightningDataModule):
                         with open(output_val, "w") as f:
                             for sample in val_files:
                                 f.write(str(sample) + "\n")
+            
+            output_train = os.path.join("data", os.path.join("runs", f"{self.config.logging.run_name}_train.txt"))
+            output_val = os.path.join("data", os.path.join("runs", f"{self.config.logging.run_name}_val.txt"))
+            with open(output_train, "w") as f:
+                for sample in train_files:
+                    f.write(str(sample) + "\n")
+            with open(output_val, "w") as f:
+                for sample in val_files:
+                    f.write(str(sample) + "\n")
 
             self.train_dataset = INRDataset(
                 files=train_files,
