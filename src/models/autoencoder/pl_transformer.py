@@ -14,6 +14,7 @@ from src.core.config import TransformerExperimentConfig
 from src.models.utils import tokens_to_image_dict
 from src.models.autoencoder.transformer import Encoder, Decoder
 from src.data.inr import INR
+from src.data.augmentations import add_noise
 
 demo_inr = INR(up_scale=16)
 for param in demo_inr.parameters():
@@ -37,6 +38,7 @@ class Autoencoder(pl.LightningModule):
             num_heads=config.model.num_heads,
             input_dim=config.model.input_dim,
             latent_dim=config.model.latent_dim,
+            layer_norm=config.model.layer_norm,
         )
 
         self.decoder = Decoder(
@@ -298,7 +300,11 @@ class Autoencoder(pl.LightningModule):
         original_tokens = original_tokens.to(self.device)
         original_masks = original_masks.to(self.device)
         original_positions = original_positions.to(self.device)
-        reconstructed, z, mu, logvar = self.forward(original_tokens, original_positions)
+
+        # Add noise 
+        original_tokens_with_noise = add_noise(original_tokens, self.config.model.noise)
+	
+        reconstructed, z, mu, logvar = self.forward(original_tokens_with_noise, original_positions)
 
         # Compute loss
         loss, log_dict = self.compute_loss(

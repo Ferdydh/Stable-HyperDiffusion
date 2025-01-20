@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from core.config import (
+from src.core.config import (
     BaseExperimentConfig,
     CheckpointConfig,
     DataConfig,

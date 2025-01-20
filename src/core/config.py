@@ -98,6 +98,8 @@ class TransformerModelConfig(BaseModelConfig):
     beta: float = 0.1
     recon_scale: float = 1.0e-4
     use_mask: bool = True
+    noise: float = 1e-4
+    layer_norm: bool = True
 
     @classmethod
     def default(cls) -> "TransformerModelConfig":
@@ -153,6 +155,14 @@ class DataConfig:
             selector=DataSelector(dataset_type=DatasetType.MNIST, class_label=2),
             batch_size=32,
         )
+    
+    @classmethod
+    def all_digits(cls) -> "DataConfig":
+        return cls(
+            data_path=DATA_PATH,
+            selector=DataSelector(dataset_type=DatasetType.MNIST),
+            batch_size=64,
+        )
 
 
 @dataclass
@@ -176,8 +186,8 @@ class OptimizerConfig:
 class SchedulerConfig:
     warmup_ratio: float
     # name: str
-    T_max: Optional[int] = None
-    eta_min: Optional[float] = None
+    #T_max: Optional[int] = None
+    #eta_min: Optional[float] = None
 
     @classmethod
     def cosine_default(cls) -> "SchedulerConfig":
@@ -185,8 +195,8 @@ class SchedulerConfig:
             warmup_ratio=0.1,
             # name="cosine",
             # TODO: fix this haha. this one is for cosine annealing, the one on top is for other schedulers
-            T_max=1000,
-            eta_min=1e-6,
+            #T_max=1000,
+            #eta_min=1e-6,
         )
 
 

@@ -1,7 +1,7 @@
 from typing import List
 import os
 
-from data.data_converter import flattened_weights_to_weights
+from src.data.data_converter import flattened_weights_to_weights
 import numpy as np
 import torch
 

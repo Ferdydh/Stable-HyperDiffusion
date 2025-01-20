@@ -197,6 +197,7 @@ class Encoder(nn.Module):
         num_heads: int,
         input_dim: int,
         latent_dim: int,
+        layer_norm: bool
     ):
         super(Encoder, self).__init__()
 
@@ -211,6 +212,12 @@ class Encoder(nn.Module):
             dropout=dropout,
             bias=False,
         )
+
+        if layer_norm:
+            self.layer_norm = nn.LayerNorm(d_model)
+        else:
+            self.layer_norm = None
+
         # Separate projectors for mean and log variance
         self.mean_projector = nn.Linear(d_model, latent_dim)
         self.logvar_projector = nn.Linear(d_model, latent_dim)
@@ -253,6 +260,8 @@ class Encoder(nn.Module):
             logvar: Log variance of the latent Gaussian [batch_size, seq_len, latent_dim]
         """
         embedded = self.tokenizer(input_tokens)
+        if self.layer_norm:
+            embedded = self.layer_norm(embedded)
         positioned = self.position_embeddings(embedded, positions)
         transformed = self.transformer(positioned, mask=attention_mask)
 
