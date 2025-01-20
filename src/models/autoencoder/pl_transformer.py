@@ -13,11 +13,20 @@ from src.core.config import TransformerExperimentConfig
 from src.models.utils import tokens_to_image_dict
 from src.models.autoencoder.transformer import Encoder, Decoder
 from src.data.inr import INR
-from src.data.augmentations import add_noise
 
 demo_inr = INR(up_scale=16)
 for param in demo_inr.parameters():
     param.requires_grad = False
+    
+
+def add_noise(
+    tensor: torch.Tensor, sigma: float = 0.1, multiplicative: bool = True
+) -> torch.Tensor:
+    """Add Gaussian noise to tensor."""
+    noise = torch.randn_like(tensor) * sigma
+    if multiplicative:
+        return tensor * (1.0 + noise)
+    return tensor + noise
 
 
 class Autoencoder(pl.LightningModule):
