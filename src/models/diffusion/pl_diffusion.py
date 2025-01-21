@@ -14,7 +14,7 @@ from src.models.diffusion.gaussian_diffusion import (
     ModelVarType,
 )
 from src.core.config_diffusion import DiffusionExperimentConfig
-from src.models.utils import duplicate_batch_to_size, flattened_weights_to_image_dict
+from src.models.utils import duplicate_batch_to_size, tokens_to_image_dict
 from src.data.inr import INR
 from src.models.diffusion.transformer import Transformer
 
@@ -28,6 +28,8 @@ def initialize_transformer(config: DiffusionExperimentConfig) -> Transformer:
         shape = state_dict[layer].shape
         layers.append(np.prod(shape))
         layer_names.append(layer)
+    #print(layers)
+    #print(layer_names)
 
     return Transformer(
         layers,
@@ -41,13 +43,25 @@ class HyperDiffusion(pl.LightningModule):
         self,
         config: DiffusionExperimentConfig,
         image_shape: tuple,
+        autoencoder: pl.LightningModule = None,
+        positions:  torch.Tensor = None
     ):
         super().__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=['autoencoder'])
 
-        self.model = initialize_transformer(config)
         self.config = config
         self.image_shape = image_shape
+        self.autoencoder = autoencoder
+        
+        if self.autoencoder is None:
+            self.model = initialize_transformer(config)
+        else:
+            self.model = Transformer(
+                                [520],
+                                ['layer0'],
+                                **(asdict(config.transformer_config)),
+                            )
+        self.positions = positions
 
         # Initialize diffusion model
         betas = torch.tensor(np.linspace(1e-4, 2e-2, config.timesteps))
@@ -67,12 +81,20 @@ class HyperDiffusion(pl.LightningModule):
 
     def on_train_start(self):
         # Sanity check visualization
-        batch = next(iter(self.trainer.train_dataloader))
-        weights = batch[0].flatten().unsqueeze(0)
-        vis_dict = flattened_weights_to_image_dict(
-            weights, self.demo_inr, "train/original", self.device
-        )
+        tokens,_,positions = next(iter(self.trainer.train_dataloader))
+        vis_dict = tokens_to_image_dict(
+                tokens[0].unsqueeze(0), 
+                positions[0].unsqueeze(0),
+                self.demo_inr, 
+                "train/original", 
+                self.device,
+                self.trainer.train_dataloader.dataset.get_state_dict(0)
+            )
         self.logger.experiment.log(vis_dict)
+
+        # Move autoencoder to device
+        if self.autoencoder is not None:
+            self.autoencoder = self.autoencoder.to(self.device)
 
     def configure_optimizers(self):
         # AdamW optimizer with explicit defaults
@@ -115,13 +137,32 @@ class HyperDiffusion(pl.LightningModule):
         return loss_terms["loss"].mean()
 
     def training_step(self, batch, batch_idx):
-        batch = duplicate_batch_to_size(batch)
+        original_tokens, _, original_positions = batch
+        original_tokens = original_tokens.to(self.device)
+        original_positions = original_positions.to(self.device)
+        
+        with torch.no_grad():
+            latent_vector,_,_ = self.autoencoder.encoder(original_tokens, original_positions)    # Shape: (batch_size, n_tokens, latent_dim)
+
+        flattened_latent = latent_vector.view(latent_vector.shape[0], -1)
+
+        batch = duplicate_batch_to_size(flattened_latent)
         loss = self._compute_loss(batch)
         self.log("train/loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss = self._compute_loss(batch)
+        original_tokens, _, original_positions = batch
+        original_tokens = original_tokens.to(self.device)
+        original_positions = original_positions.to(self.device)
+        
+        with torch.no_grad():
+            latent_vector,_,_ = self.autoencoder.encoder(original_tokens, original_positions)
+
+        flattened_latent = latent_vector.view(latent_vector.shape[0], -1)
+        #print(flattened_latent.shape)
+
+        loss = self._compute_loss(flattened_latent)
         # More explicit logging
         self.log("val/loss", loss)
 
@@ -130,10 +171,22 @@ class HyperDiffusion(pl.LightningModule):
     def on_train_epoch_end(self):
         if self.current_epoch % self.config.visualize_every_n_epochs == 0:
             # Generate samples for visualization
-            samples = self.diff.ddim_sample_loop(self.model, (4, *self.image_shape[1:]))
+            samples = self.diff.ddim_sample_loop(self.model, (4, *self.image_shape[1:]))    # Output: BATCH_SIZE x 520  -> as latent_dim * n_tokens = 8 * 65 = 520
+            #print(samples.shape)
+            samples_tokenized = samples.view(samples.shape[0], self.autoencoder.config.model.n_tokens, self.autoencoder.config.model.latent_dim)
 
-            vis_dict = flattened_weights_to_image_dict(
-                samples, self.demo_inr, "train/reconstruction", self.device
+            positions = self.positions.unsqueeze(0).repeat(samples_tokenized.shape[0], 1, 1).to(self.device)
+
+            with torch.no_grad():
+                samples_reconstructed = self.autoencoder.decoder(samples_tokenized, positions)
+
+            vis_dict = tokens_to_image_dict(
+                samples_reconstructed, 
+                positions,
+                self.demo_inr, 
+                "train/reconstruction", 
+                self.device,
+                self.trainer.train_dataloader.dataset.get_state_dict(0)
             )
             vis_dict["epoch"] = self.current_epoch
             self.logger.experiment.log(vis_dict)

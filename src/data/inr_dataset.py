@@ -39,7 +39,7 @@ class INRDataset(Dataset):
 
     def get_state_dict(self, index):
         return torch.load(
-            self.files[index], map_location=self.device, weights_only=True
+            self.files[index], map_location="cpu", weights_only=True
         )
 
     def __len__(self):
