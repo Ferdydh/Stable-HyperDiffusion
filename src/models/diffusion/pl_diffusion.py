@@ -95,6 +95,21 @@ class HyperDiffusion(pl.LightningModule):
         # Move autoencoder to device
         if self.autoencoder is not None:
             self.autoencoder = self.autoencoder.to(self.device)
+            self.autoencoder.eval()
+            tokens = tokens.to(self.device)
+            positions = positions.to(self.device)
+            with torch.no_grad():
+                reconstructed, _,_,_ = self.autoencoder(tokens, positions)
+            vis_dict = tokens_to_image_dict(
+                reconstructed,  # tokens
+                positions,  # pos
+                self.demo_inr,
+                "train/vae_reconstruction",
+                self.device,
+                self.trainer.train_dataloader.dataset.get_state_dict(0)
+            )
+
+            self.logger.experiment.log(vis_dict)
 
     def configure_optimizers(self):
         # AdamW optimizer with explicit defaults

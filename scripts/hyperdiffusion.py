@@ -41,7 +41,7 @@ if __name__ == "__main__":
     # idk man
     # config.transformer_config.split_policy = "chunk"
     # config.transformer_config.chunk_size = 128
-    config.transformer_config.n_embd = 128
+    config.transformer_config.n_embd = 256
     config.transformer_config.n_head = 8
     config.transformer_config.n_layer = 8
 
