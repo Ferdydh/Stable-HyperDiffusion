@@ -90,7 +90,7 @@ class HyperDiffusion(pl.LightningModule):
         if self.autoencoder is None:
             weights = next(iter(self.trainer.train_dataloader))
             vis_dict = flattened_weights_to_image_dict(
-                weights, self.demo_inr, "train/reconstruction", self.device
+                weights, self.demo_inr, "train/original", self.device
             )
         else:
             tokens, _, positions = next(iter(self.trainer.train_dataloader))
@@ -167,7 +167,7 @@ class HyperDiffusion(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         if self.autoencoder is None:
             weights = batch.to(self.device)
-            weights = duplicate_batch_to_size(weights)
+            weights = duplicate_batch_to_size(weights, 8192)
             loss = self._compute_loss(batch)
             self.log("train/loss", loss)
             return loss
@@ -191,8 +191,7 @@ class HyperDiffusion(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         if self.autoencoder is None:
-            weights = batch.to(self.device)
-            weights = duplicate_batch_to_size(weights)
+            batch = batch.to(self.device)
             loss = self._compute_loss(batch)
             self.log("val/loss", loss)
             return loss
