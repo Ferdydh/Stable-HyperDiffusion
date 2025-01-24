@@ -50,6 +50,30 @@ def train(
                 f"{config.logging.run_name} {datetime.now().strftime('%Y%m%d_%H%M%S')}"
             )
 
+        autoencoder = None
+
+        # Training on whole stable hyperdiffusion model (including pretrained autoencoder)
+        use_autoencoder = (
+            config.autoencoder_checkpoint
+            and config_ae is not None
+            and config.autoencoder_checkpoint is not None
+        )
+
+        if use_autoencoder:
+            # TODO: add config
+            autoencoder = Autoencoder(config=config_ae)
+            state_dict = torch.load(config.autoencoder_checkpoint)
+            autoencoder.load_state_dict(state_dict["state_dict"])
+
+            for param in autoencoder.parameters():
+                param.requires_grad = False
+            autoencoder.eval()
+
+        # Initialize data handler
+        data_handler = DataHandler(config, use_autoencoder)
+
+        data_handler.setup()
+
         # Initialize WandB logger with modified settings
         wandb_logger = WandbLogger(
             project=config.logging.project_name,
@@ -63,41 +87,21 @@ def train(
         # Log hyperparameters and config file
         wandb_logger.log_hyperparams(asdict(config))
 
-        autoencoder = None
-
-        # Initialize data handler
-        data_handler = DataHandler(config)
-
-        # Training on whole stable hyperdiffusion model (including pretrained autoencoder)
-        if config.autoencoder_checkpoint and config_ae is not None and config.autoencoder_checkpoint is not None:
-            # TODO: add config
-            autoencoder = Autoencoder(config=config_ae)
-            state_dict = torch.load(config.autoencoder_checkpoint)
-            autoencoder.load_state_dict(state_dict["state_dict"])
-
-            for param in autoencoder.parameters():
-                param.requires_grad = False
-            autoencoder.eval()
-
-            # Use autoencoder model input data
-            data_handler.is_flattened = False
-
-        data_handler.setup()
-
         positions = None
 
         # Training on whole stable hyperdiffusion model (including pretrained autoencoder)
         if config_ae:
-            data_shape = (config.data.batch_size, config_ae.model.n_tokens * config_ae.model.latent_dim)
+            data_shape = (
+                config.data.batch_size,
+                config_ae.model.n_tokens * config_ae.model.latent_dim,
+            )
             print(data_shape)
-            _,_,positions = data_handler.train_dataloader().dataset[0]
+            _, _, positions = data_handler.train_dataloader().dataset[0]
         else:
             data_shape = next(iter(data_handler.train_dataloader())).shape
-    
+
         # Initialize model
-        diffuser_opt = HyperDiffusion(
-            config, data_shape, autoencoder, positions
-        )
+        diffuser_opt = HyperDiffusion(config, data_shape, autoencoder, positions)
 
         # diffuser_opt = torch.compile(diffuser)
 

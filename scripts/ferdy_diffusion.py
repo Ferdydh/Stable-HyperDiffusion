@@ -40,9 +40,9 @@ if __name__ == "__main__":
     # idk man
     # config.transformer_config.split_policy = "chunk"
     # config.transformer_config.chunk_size = 128
-    config.transformer_config.n_embd = 256
+    config.transformer_config.n_embd = 512
     config.transformer_config.n_head = 8
-    config.transformer_config.n_layer = 4
+    config.transformer_config.n_layer = 8
 
     # Test for a bigger one before full
     # config.data = DataConfig.full()
@@ -70,7 +70,4 @@ if __name__ == "__main__":
     config.early_stopping.min_delta = 1e-6  # I want the end result to be 1e-5
 
     #
-
-    config_ae = TransformerExperimentConfig.default()
-
-    train(config, config_ae)
+    train(config, None)

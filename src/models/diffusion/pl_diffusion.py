@@ -2,7 +2,7 @@ from dataclasses import asdict
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from einops import repeat
+import einops
 from torchmetrics.image.fid import FrechetInceptionDistance
 from transformers import get_linear_schedule_with_warmup
 
@@ -14,9 +14,15 @@ from src.models.diffusion.gaussian_diffusion import (
     ModelVarType,
 )
 from src.core.config_diffusion import DiffusionExperimentConfig
-from src.models.utils import duplicate_batch_to_size, tokens_to_image_dict
+from src.models.utils import (
+    duplicate_batch_to_size,
+    flattened_weights_to_image_dict,
+    tokens_to_image_dict,
+)
 from src.data.inr import INR
 from src.models.diffusion.transformer import Transformer
+import src.models.autoencoder.pl_transformer as pl_transformer
+import src.models.autoencoder.pl_mlp as pl_mlp
 
 
 def initialize_transformer(config: DiffusionExperimentConfig) -> Transformer:
@@ -28,8 +34,8 @@ def initialize_transformer(config: DiffusionExperimentConfig) -> Transformer:
         shape = state_dict[layer].shape
         layers.append(np.prod(shape))
         layer_names.append(layer)
-    #print(layers)
-    #print(layer_names)
+    # print(layers)
+    # print(layer_names)
 
     return Transformer(
         layers,
@@ -43,24 +49,24 @@ class HyperDiffusion(pl.LightningModule):
         self,
         config: DiffusionExperimentConfig,
         image_shape: tuple,
-        autoencoder: pl.LightningModule = None,
-        positions:  torch.Tensor = None
+        autoencoder: pl_transformer.Autoencoder | pl_mlp.Autoencoder = None,
+        positions: torch.Tensor = None,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=['autoencoder'])
+        self.save_hyperparameters(ignore=["autoencoder"])
 
         self.config = config
         self.image_shape = image_shape
         self.autoencoder = autoencoder
-        
+
         if self.autoencoder is None:
             self.model = initialize_transformer(config)
         else:
             self.model = Transformer(
-                                [520],
-                                ['layer0'],
-                                **(asdict(config.transformer_config)),
-                            )
+                [520],
+                ["layer0"],
+                **(asdict(config.transformer_config)),
+            )
         self.positions = positions
 
         # Initialize diffusion model
@@ -81,15 +87,22 @@ class HyperDiffusion(pl.LightningModule):
 
     def on_train_start(self):
         # Sanity check visualization
-        tokens,_,positions = next(iter(self.trainer.train_dataloader))
-        vis_dict = tokens_to_image_dict(
-                tokens[0].unsqueeze(0), 
-                positions[0].unsqueeze(0),
-                self.demo_inr, 
-                "train/original", 
-                self.device,
-                self.trainer.train_dataloader.dataset.get_state_dict(0)
+        if self.autoencoder is None:
+            weights = next(iter(self.trainer.train_dataloader))
+            vis_dict = flattened_weights_to_image_dict(
+                weights, self.demo_inr, "train/reconstruction", self.device
             )
+        else:
+            tokens, _, positions = next(iter(self.trainer.train_dataloader))
+            vis_dict = tokens_to_image_dict(
+                tokens[0].unsqueeze(0),
+                positions[0].unsqueeze(0),
+                self.demo_inr,
+                "train/original",
+                self.device,
+                self.trainer.train_dataloader.dataset.get_state_dict(0),
+            )
+
         self.logger.experiment.log(vis_dict)
 
         # Move autoencoder to device
@@ -99,14 +112,14 @@ class HyperDiffusion(pl.LightningModule):
             tokens = tokens.to(self.device)
             positions = positions.to(self.device)
             with torch.no_grad():
-                reconstructed, _,_,_ = self.autoencoder(tokens, positions)
+                reconstructed, _, _, _ = self.autoencoder(tokens, positions)
             vis_dict = tokens_to_image_dict(
                 reconstructed,  # tokens
                 positions,  # pos
                 self.demo_inr,
                 "train/vae_reconstruction",
                 self.device,
-                self.trainer.train_dataloader.dataset.get_state_dict(0)
+                self.trainer.train_dataloader.dataset.get_state_dict(0),
             )
 
             self.logger.experiment.log(vis_dict)
@@ -152,14 +165,24 @@ class HyperDiffusion(pl.LightningModule):
         return loss_terms["loss"].mean()
 
     def training_step(self, batch, batch_idx):
+        if self.autoencoder is None:
+            weights = batch.to(self.device)
+            weights = duplicate_batch_to_size(weights)
+            loss = self._compute_loss(batch)
+            self.log("train/loss", loss)
+            return loss
+
         original_tokens, _, original_positions = batch
         original_tokens = original_tokens.to(self.device)
         original_positions = original_positions.to(self.device)
-        
-        with torch.no_grad():
-            latent_vector,_,_ = self.autoencoder.encoder(original_tokens, original_positions)    # Shape: (batch_size, n_tokens, latent_dim)
 
-        flattened_latent = latent_vector.view(latent_vector.shape[0], -1)
+        with torch.no_grad():
+            latent_vector, _, _ = self.autoencoder.encoder(
+                original_tokens, original_positions
+            )  # Shape: (batch_size, n_tokens, latent_dim)
+
+        # Flatten all dimensions after batch (b) into a single dimension (-1 means auto-calculate size)
+        flattened_latent = einops.rearrange(latent_vector, "b ... -> b (-1)")
 
         batch = duplicate_batch_to_size(flattened_latent)
         loss = self._compute_loss(batch)
@@ -167,15 +190,25 @@ class HyperDiffusion(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        if self.autoencoder is None:
+            weights = batch.to(self.device)
+            weights = duplicate_batch_to_size(weights)
+            loss = self._compute_loss(batch)
+            self.log("val/loss", loss)
+            return loss
+
         original_tokens, _, original_positions = batch
         original_tokens = original_tokens.to(self.device)
         original_positions = original_positions.to(self.device)
-        
-        with torch.no_grad():
-            latent_vector,_,_ = self.autoencoder.encoder(original_tokens, original_positions)
 
-        flattened_latent = latent_vector.view(latent_vector.shape[0], -1)
-        #print(flattened_latent.shape)
+        with torch.no_grad():
+            latent_vector, _, _ = self.autoencoder.encoder(
+                original_tokens, original_positions
+            )
+
+        # Flatten all dimensions after batch (b) into a single dimension (-1 means auto-calculate size)
+        flattened_latent = einops.rearrange(latent_vector, "b ... -> b (-1)")
+        # print(flattened_latent.shape)
 
         loss = self._compute_loss(flattened_latent)
         # More explicit logging
@@ -184,61 +217,85 @@ class HyperDiffusion(pl.LightningModule):
         return loss
 
     def on_train_epoch_end(self):
-        if self.current_epoch % self.config.visualize_every_n_epochs == 0:
-            # Generate samples for visualization
-            samples = self.diff.ddim_sample_loop(self.model, (4, *self.image_shape[1:]))    # Output: BATCH_SIZE x 520  -> as latent_dim * n_tokens = 8 * 65 = 520
-            #print(samples.shape)
-            samples_tokenized = samples.view(samples.shape[0], self.autoencoder.config.model.n_tokens, self.autoencoder.config.model.latent_dim)
+        if self.current_epoch % self.config.visualize_every_n_epochs != 0:
+            # Not the time to generate image
+            return
 
-            positions = self.positions.unsqueeze(0).repeat(samples_tokenized.shape[0], 1, 1).to(self.device)
+        # Generate samples for visualization
+        samples = self.diff.ddim_sample_loop(self.model, (4, *self.image_shape[1:]))
+        # If stable hyperdiffusion
+        # Output: BATCH_SIZE x 520  -> as latent_dim * n_tokens = 8 * 65 = 520
+        # if normal hyperdiffusion
+        # Output: BATCH_SIZE x 1185
+
+        if self.autoencoder is None:
+            # Normal Hyperdiffusion
+            vis_dict = flattened_weights_to_image_dict(
+                samples, self.demo_inr, "train/reconstruction", self.device
+            )
+        else:
+            # Stable Hyperdiffusion
+            samples_tokenized = einops.rearrange(
+                samples,
+                "b (n d) -> b n d",
+                n=self.autoencoder.config.model.n_tokens,
+                d=self.autoencoder.config.model.latent_dim,
+            )
+
+            positions = einops.repeat(
+                self.positions, "n d -> b n d", b=samples_tokenized.shape[0]
+            ).to(self.device)
 
             with torch.no_grad():
-                samples_reconstructed = self.autoencoder.decoder(samples_tokenized, positions)
+                samples_reconstructed = self.autoencoder.decoder(
+                    samples_tokenized, positions
+                )
 
             vis_dict = tokens_to_image_dict(
-                samples_reconstructed, 
+                samples_reconstructed,
                 positions,
-                self.demo_inr, 
-                "train/reconstruction", 
+                self.demo_inr,
+                "train/reconstruction",
                 self.device,
-                self.trainer.train_dataloader.dataset.get_state_dict(0)
+                self.trainer.train_dataloader.dataset.get_state_dict(0),
             )
-            vis_dict["epoch"] = self.current_epoch
-            self.logger.experiment.log(vis_dict)
 
-            # Calculate FID if it's time
-            # if self.current_epoch % self.config.val_fid_calculation_period == 0:
-            #     # Generate more samples for FID
-            #     samples = []
-            #     num_samples = self.config.num_samples_metrics
-            #     batch_size = min(100, num_samples)
+        vis_dict["epoch"] = self.current_epoch
+        self.logger.experiment.log(vis_dict)
 
-            #     for idx in range(0, num_samples, batch_size):
-            #         curr_batch_size = min(batch_size, num_samples - idx)
-            #         sample = self.diff.ddim_sample_loop(
-            #             self.model, (curr_batch_size, *self.image_shape[1:])
-            #         )
-            #         samples.append(sample)
+        # Calculate FID if it's time
+        # if self.current_epoch % self.config.val_fid_calculation_period == 0:
+        #     # Generate more samples for FID
+        #     samples = []
+        #     num_samples = self.config.num_samples_metrics
+        #     batch_size = min(100, num_samples)
 
-            #     fake_images = generate_images(
-            #         torch.vstack(samples), self.demo_inr, self.device
-            #     )
+        #     for idx in range(0, num_samples, batch_size):
+        #         curr_batch_size = min(batch_size, num_samples - idx)
+        #         sample = self.diff.ddim_sample_loop(
+        #             self.model, (curr_batch_size, *self.image_shape[1:])
+        #         )
+        #         samples.append(sample)
 
-            #     # Get training images for FID
-            #     train_dataset = self.trainer.train_dataloader.dataset
-            #     max_samples = min(len(train_dataset), num_samples)
-            #     real_samples = torch.vstack(
-            #         [train_dataset[i] for i in range(max_samples)]
-            #     )
-            #     real_images = generate_images(real_samples, self.demo_inr, self.device)
+        #     fake_images = generate_images(
+        #         torch.vstack(samples), self.demo_inr, self.device
+        #     )
 
-            #     # Compute and log FID
-            #     # Expand single channel to RGB
-            #     real_images = repeat(real_images, "b h w -> b c h w", c=3)
-            #     fake_images = repeat(fake_images, "b h w -> b c h w", c=3)
+        #     # Get training images for FID
+        #     train_dataset = self.trainer.train_dataloader.dataset
+        #     max_samples = min(len(train_dataset), num_samples)
+        #     real_samples = torch.vstack(
+        #         [train_dataset[i] for i in range(max_samples)]
+        #     )
+        #     real_images = generate_images(real_samples, self.demo_inr, self.device)
 
-            #     self.fid.update(real_images.cuda(), real=True)
-            #     self.fid.update(fake_images.cuda(), real=False)
-            #     fid_score = self.fid.compute()
+        #     # Compute and log FID
+        #     # Expand single channel to RGB
+        #     real_images = repeat(real_images, "b h w -> b c h w", c=3)
+        #     fake_images = repeat(fake_images, "b h w -> b c h w", c=3)
 
-            #     self.log("metrics/fid", fid_score)
+        #     self.fid.update(real_images.cuda(), real=True)
+        #     self.fid.update(fake_images.cuda(), real=False)
+        #     fid_score = self.fid.compute()
+
+        #     self.log("metrics/fid", fid_score)
