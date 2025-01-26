@@ -167,7 +167,7 @@ class HyperDiffusion(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         if self.autoencoder is None:
             weights = batch.to(self.device)
-            weights = duplicate_batch_to_size(weights, 8192)
+            weights = duplicate_batch_to_size(weights, 32768)
             loss = self._compute_loss(batch)
             self.log("train/loss", loss)
             return loss

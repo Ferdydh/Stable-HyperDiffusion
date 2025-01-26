@@ -8,12 +8,12 @@ from src.core.config_diffusion import DiffusionExperimentConfig
 if __name__ == "__main__":
     config: DiffusionExperimentConfig = DiffusionExperimentConfig.sanity()
     # This worked for 4 samples
-    config.transformer_config.n_embd = 256
-    config.transformer_config.n_head = 8
-    config.transformer_config.n_layer = 8
+    # config.transformer_config.n_embd = 256
+    # config.transformer_config.n_head = 8
+    # config.transformer_config.n_layer = 8
 
     config.logging.project_name = "hyperdiffusion"
-    config.logging.run_name = "hyperdiffusion_num2"
+    config.logging.run_name = "standard hyperdiffusion, all 2 digits, pls work"
 
     # Sanity
     # config.data = DataConfig.sanity()
@@ -30,19 +30,19 @@ if __name__ == "__main__":
     # config.val_fid_calculation_period = 200
 
     # Test for 32
-    config.data = DataConfig.small()
-    config.data.batch_size = 32
-    config.data.sample_limit = 36
-    config.trainer.max_epochs = 10000
-    config.visualize_every_n_epochs = 100
-    config.val_fid_calculation_period = 200
+    # config.data = DataConfig.small()
+    # config.data.batch_size = 32
+    # config.data.sample_limit = 36
+    # config.trainer.max_epochs = 10000
+    # config.visualize_every_n_epochs = 100
+    # config.val_fid_calculation_period = 200
 
     # idk man
     # config.transformer_config.split_policy = "chunk"
     # config.transformer_config.chunk_size = 128
-    config.transformer_config.n_embd = 512
-    config.transformer_config.n_head = 8
-    config.transformer_config.n_layer = 8
+    config.transformer_config.n_embd = 768
+    config.transformer_config.n_head = 12
+    config.transformer_config.n_layer = 6
 
     # Test for a bigger one before full
     # config.data = DataConfig.full()
@@ -51,6 +51,14 @@ if __name__ == "__main__":
     # config.trainer.max_epochs = 10000
     # config.visualize_every_n_epochs = 100
     # config.val_fid_calculation_period = 200
+
+    # All
+    config.data = DataConfig.full()
+    config.data.batch_size = 1024
+    # config.data.sample_limit = 565
+    config.trainer.max_epochs = 20000
+    config.visualize_every_n_epochs = 100
+    config.val_fid_calculation_period = 200
 
     # config.transformer_config.n_embd = 512
     # config.transformer_config.n_head = 16

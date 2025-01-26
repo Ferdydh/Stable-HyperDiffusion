@@ -32,7 +32,9 @@ def cleanup_wandb():
 
 
 def train(
-    config: DiffusionExperimentConfig, config_ae: TransformerExperimentConfig = None
+    config: DiffusionExperimentConfig,
+    config_ae: TransformerExperimentConfig = None,
+    continue_training_from_path: str = None,
 ):
     """Train the autoencoder model with improved logging and visualization."""
     # Register cleanup function
@@ -102,6 +104,10 @@ def train(
 
         # Initialize model
         diffuser_opt = HyperDiffusion(config, data_shape, autoencoder, positions)
+
+        if continue_training_from_path is not None:
+            state_dict = torch.load(continue_training_from_path)
+            diffuser_opt.load_state_dict(state_dict["state_dict"])
 
         # diffuser_opt = torch.compile(diffuser)
 
