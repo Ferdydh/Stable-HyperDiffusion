@@ -45,7 +45,7 @@ def duplicate_batch_to_size(batch):
     Duplicates elements in a batch until it reaches the target batch size.
     Works with both single tensors and dictionary/tuple batch structures.
     """
-    target_batch_size = 2048
+    target_batch_size = 4096
 
     if isinstance(batch, torch.Tensor):
         # For single tensor batch

@@ -32,7 +32,7 @@ if __name__ == "__main__":
     # Test for 32
     config.data = DataConfig.small()
     config.data.batch_size = 32
-    config.data.sample_limit = 36
+    config.data.sample_limit = 128
     config.trainer.max_epochs = 10000
     config.visualize_every_n_epochs = 100
     config.val_fid_calculation_period = 200
@@ -41,8 +41,8 @@ if __name__ == "__main__":
     # config.transformer_config.split_policy = "chunk"
     # config.transformer_config.chunk_size = 128
     config.transformer_config.n_embd = 256
-    config.transformer_config.n_head = 8
-    config.transformer_config.n_layer = 4
+    config.transformer_config.n_head = 16
+    config.transformer_config.n_layer = 16
 
     # Test for a bigger one before full
     # config.data = DataConfig.full()
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     config.early_stopping.patience = 100
 
     #
-    config.optimizer.lr = 1e-4
+    config.optimizer.lr = 2e-4
     config.scheduler.warmup_ratio = 0.05
     config.early_stopping.min_delta = 1e-6  # I want the end result to be 1e-5
 

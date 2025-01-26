@@ -104,6 +104,7 @@ class DataHandler(pl.LightningDataModule):
                     train_files = [line.strip() for line in f]
                 with open(output_val, "r") as f:
                     val_files = [line.strip() for line in f]
+                print(f"Loaded from {output_train} and {output_val}")
             else:
                 # Calculate split sizes
                 train_size = int(len(self.files) * self.split_ratio)

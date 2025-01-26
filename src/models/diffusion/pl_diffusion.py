@@ -99,7 +99,7 @@ class HyperDiffusion(pl.LightningModule):
             tokens = tokens.to(self.device)
             positions = positions.to(self.device)
             with torch.no_grad():
-                reconstructed, _,_,_ = self.autoencoder(tokens, positions)
+                reconstructed, _,_,_ = self.autoencoder(tokens[0].unsqueeze(0), positions[0].unsqueeze(0))
             vis_dict = tokens_to_image_dict(
                 reconstructed,  # tokens
                 positions,  # pos
@@ -185,15 +185,8 @@ class HyperDiffusion(pl.LightningModule):
 
     def on_train_epoch_end(self):
         if self.current_epoch % self.config.visualize_every_n_epochs == 0:
-            # Generate samples for visualization
-            samples = self.diff.ddim_sample_loop(self.model, (4, *self.image_shape[1:]))    # Output: BATCH_SIZE x 520  -> as latent_dim * n_tokens = 8 * 65 = 520
-            #print(samples.shape)
-            samples_tokenized = samples.view(samples.shape[0], self.autoencoder.config.model.n_tokens, self.autoencoder.config.model.latent_dim)
-
-            positions = self.positions.unsqueeze(0).repeat(samples_tokenized.shape[0], 1, 1).to(self.device)
-
-            with torch.no_grad():
-                samples_reconstructed = self.autoencoder.decoder(samples_tokenized, positions)
+            
+            samples_tokenized, samples_reconstructed, positions = self.generate_samples(num_samples=self.config.logging.num_samples_to_visualize)
 
             vis_dict = tokens_to_image_dict(
                 samples_reconstructed, 
@@ -242,3 +235,18 @@ class HyperDiffusion(pl.LightningModule):
             #     fid_score = self.fid.compute()
 
             #     self.log("metrics/fid", fid_score)
+
+    def generate_samples(self, num_samples=10):
+        self.eval()
+        # Generate samples for visualization
+        samples = self.diff.ddim_sample_loop(self.model, (num_samples, *self.image_shape[1:]))    # Output: BATCH_SIZE x 520  -> as latent_dim * n_tokens = 8 * 65 = 520
+        #print(samples.shape)
+        samples_tokenized = samples.view(samples.shape[0], self.autoencoder.config.model.n_tokens, self.autoencoder.config.model.latent_dim)
+        #print(samples_tokenized.shape)
+
+        positions = self.positions.unsqueeze(0).repeat(samples_tokenized.shape[0], 1, 1).to(self.device)
+
+        with torch.no_grad():
+            samples_reconstructed = self.autoencoder.decoder(samples_tokenized, positions)
+        #print(samples_reconstructed.shape)
+        return samples_tokenized, samples_reconstructed, positions
