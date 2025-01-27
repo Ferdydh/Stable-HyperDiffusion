@@ -38,9 +38,7 @@ class INRDataset(Dataset):
         return tokens, masks, pos
 
     def get_state_dict(self, index):
-        return torch.load(
-            self.files[index], map_location="cpu", weights_only=True
-        )
+        return torch.load(self.files[index], map_location="cpu", weights_only=True)
 
     def __len__(self):
         return len(self.files)
@@ -52,6 +50,7 @@ class DataHandler(pl.LightningDataModule):
         config: DiffusionExperimentConfig
         | MLPExperimentConfig
         | TransformerExperimentConfig,
+        use_autoencoder: bool = False,
     ):
         super().__init__()
 
@@ -61,8 +60,8 @@ class DataHandler(pl.LightningDataModule):
         self.data_path = os.path.join(os.getcwd(), config.data.data_path)
 
         # this determines if the data is flattened or tokenized
-        self.is_flattened = isinstance(config, MLPExperimentConfig) or isinstance(
-            config, DiffusionExperimentConfig
+        self.is_flattened = isinstance(config, MLPExperimentConfig) or (
+            isinstance(config, DiffusionExperimentConfig) and not use_autoencoder
         )
 
         self.files = get_files_from_selectors(self.data_path, [config.data.selector])
@@ -88,10 +87,18 @@ class DataHandler(pl.LightningDataModule):
             # TODO: improve split logging (also take into account the split ratio)
             # Path to split files
             output_train = os.path.join(
-                "data", str(self.config.data.sample_limit) + "_" + str(self.config.data.split_ratio) + "_train.lst"
+                "data",
+                str(self.config.data.sample_limit)
+                + "_"
+                + str(self.config.data.split_ratio)
+                + "_train.lst",
             )
             output_val = os.path.join(
-                "data", str(self.config.data.sample_limit) + "_" + str(self.config.data.split_ratio) + "_val.lst"
+                "data",
+                str(self.config.data.sample_limit)
+                + "_"
+                + str(self.config.data.split_ratio)
+                + "_val.lst",
             )
 
             # Load from split files if they exist
@@ -129,9 +136,14 @@ class DataHandler(pl.LightningDataModule):
                         with open(output_val, "w") as f:
                             for sample in val_files:
                                 f.write(str(sample) + "\n")
-            
-            output_train = os.path.join("data", os.path.join("runs", f"{self.config.logging.run_name}_train.txt"))
-            output_val = os.path.join("data", os.path.join("runs", f"{self.config.logging.run_name}_val.txt"))
+
+            output_train = os.path.join(
+                "data",
+                os.path.join("runs", f"{self.config.logging.run_name}_train.txt"),
+            )
+            output_val = os.path.join(
+                "data", os.path.join("runs", f"{self.config.logging.run_name}_val.txt")
+            )
             with open(output_train, "w") as f:
                 for sample in train_files:
                     f.write(str(sample) + "\n")

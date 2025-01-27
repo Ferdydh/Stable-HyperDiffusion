@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image, ImageFont, ImageDraw
 import torch
 
-def plot_n_images(images, row=False):
+def plot_n_images(images, row=False, path=None, show=True):
     """
     Plot multiple images in a grid or single-row layout.
 
@@ -42,7 +42,10 @@ def plot_n_images(images, row=False):
 
     plt.tight_layout()  
     plt.ion()
-    plt.show(block=True)
+    if show:
+        plt.show(block=True)
+    if path is not None:
+        plt.savefig(path)
 
 
 def plot_n_images_and_reconstructions(images, reconstructions, mse_weights, mse_images):
@@ -167,3 +170,53 @@ def render_n_images_and_reconstructions(images, reconstructions, mse_weights, ms
 
     # Save the canvas to image file
     canvas.save(path, format='PNG')
+
+
+
+def plot_diffusion_knn(
+    diffusion_images, 
+    dataset_images, 
+    mse_images, 
+    mse_weights,
+    k=1, 
+    num_samples=5
+):
+    """
+    Visualize diffusion images and their k-nearest neighbors along with MSE losses.
+
+    Args:
+        diffusion_images (list): List of generated diffusion images (as tensors or numpy arrays).
+        dataset_images (list): List of lists containing k-nearest dataset images for each diffusion image.
+        mse_images (list): List of lists containing MSE losses for each k-nearest dataset image.
+        k (int): Number of nearest neighbors for each diffusion image.
+        num_samples (int): Number of diffusion images to visualize.
+    """
+    # Limit the number of samples to visualize
+    num_samples = min(num_samples, len(diffusion_images))
+
+    # Create a grid layout with (k + 1) rows and num_samples columns
+    fig, axes = plt.subplots(k + 1, num_samples, figsize=(3 * num_samples, 3 * (k + 1)))
+
+    # If there's only one diffusion image to show, adjust the axes
+    if num_samples == 1:
+        axes = axes[:, None]
+
+    for col in range(num_samples):
+        # Plot the diffusion image in the first row
+        diffusion_img = diffusion_images[col].cpu().numpy() if hasattr(diffusion_images[col], "cpu") else diffusion_images[col]
+        axes[0, col].imshow(diffusion_img, cmap="gray" if diffusion_img.ndim == 2 else None)
+        axes[0, col].set_title(f"Diffusion {col + 1}", fontsize=10)
+        axes[0, col].axis("off")
+
+        # Plot the k-nearest neighbors and their losses in subsequent rows
+        for row in range(k):
+            neighbor_img = dataset_images[col][row].cpu().numpy() if hasattr(dataset_images[col][row], "cpu") else dataset_images[col][row]
+            loss_image = mse_images[col][row]
+            loss_weights = mse_weights[col][row]
+            axes[row + 1, col].imshow(neighbor_img, cmap="gray" if neighbor_img.ndim == 2 else None)
+            axes[row + 1, col].set_title(f"Image MSE: {loss_image:.4f}\nWeight MSE: {loss_weights:.4f}", fontsize=8)
+            axes[row + 1, col].axis("off")
+
+    # Adjust layout to prevent overlap
+    plt.tight_layout()
+    plt.show()
