@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image, ImageFont, ImageDraw
 import torch
 
-def plot_n_images(images, row=False, path=None, show=True):
+def plot_n_images(images, single_row=False, path=None, show=True, rows=None, cols=None):
     """
     Plot multiple images in a grid or single-row layout.
 
@@ -13,13 +13,17 @@ def plot_n_images(images, row=False, path=None, show=True):
     """
 
     n_samples = len(images)
+    print(f"Number of samples: {n_samples}")
 
-    # Calculate grid dimensions
-    cols = math.ceil(math.sqrt(n_samples))  # Number of columns
-    rows = math.ceil(n_samples / cols)
+    if rows and cols:
+        rows = rows
+        cols = cols
+    else:
+        cols = math.ceil(math.sqrt(n_samples))  # Number of columns
+        rows = math.ceil(n_samples / cols)
 
     # Distinguish between grid or row layout
-    if row:
+    if single_row:
         plt.figure(figsize=(15, 5))
 
         with torch.no_grad():

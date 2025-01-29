@@ -33,25 +33,14 @@ def compute_image(inr, state_dict):
     return image
 
 
-def get_best_samples(images, recons, mse_weights, image_mses, best_n=10, sort_by="weight"):
+def get_best_samples(mses, best_n=10):
     """
     Select the best samples based on MSE.
 
-    :param images: List of original images.
-    :param recons: List of reconstructed images.
-    :param mse_weights: List of weight MSE values.
-    :param image_mses: List of image MSE values.
-    :param best_n: Number of best samples to select.
-    :param sort_by: Criterion to sort by ('weight' or 'image').
-    :return: Top-N best samples as a list of tuples.
+    :param mses: List of MSE values.
+    :return: Indices of the best reconstructions.
     """
-    if sort_by == "weight":
-        index = 2
-    elif sort_by == "image":
-        index = 3
-    else:
-        raise ValueError(f"Invalid sort_by value: {sort_by}. Must be 'weight' or 'image'.")
-    return sorted(zip(images, recons, mse_weights, image_mses), key=lambda x: x[index])[:best_n]
+    return np.argsort(mses)[:best_n]
 
 
 def sample_from_latent_space(vae, inr, ref_cp, pos, n_tokens, latent_dim, n_samples=10, mean=None, std=None):
@@ -131,7 +120,7 @@ def interpolate_latent_space(latent_vector0, latent_vector1, num_interpolation_s
 
 
 
-def get_n_images_and_mses(vae, dataset, inr, n_samples, random=True):
+def get_n_images_and_mses(vae, dataset, inr, n_samples, device="cpu", random=True):
     """
     Generates a specified number of images and their reconstructions using a VAE, 
     and computes Mean Squared Error (MSE) between original and reconstructed images 
@@ -173,6 +162,9 @@ def get_n_images_and_mses(vae, dataset, inr, n_samples, random=True):
 
     # Generate outputs using the VAE in evaluation mode
     vae.eval()
+    vae = vae.to(device)
+    inputs = inputs.to(device)
+    positions = positions.to(device)
     with torch.no_grad():
         outputs,_,_,_ = vae(inputs, positions)
 
