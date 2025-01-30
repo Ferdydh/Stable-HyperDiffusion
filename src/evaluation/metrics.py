@@ -49,7 +49,9 @@ def find_nearest_neighbor(generated_samples, dataset_samples, metric="cosine",  
         dataset_samples_norm = F.normalize(dataset_samples, p=2, dim=1)  # Shape: (num_samples, 65*33)
         similarities = torch.matmul(diffusion_outputs_norm, dataset_samples_norm.T)
     elif metric == "euclidean":
-        similarities = torch.sqrt(torch.sum((generated_samples.unsqueeze(2) - dataset_samples.T.unsqueeze(0)) ** 2, dim=2))
+        similarities = torch.sqrt(torch.sum((generated_samples.unsqueeze(1) - dataset_samples.unsqueeze(0)) ** 2, dim=2))
+    elif metric == "manhattan":
+        similarities = torch.sum(torch.abs(generated_samples.unsqueeze(1) - dataset_samples.unsqueeze(0)), dim=2)
     else:
         raise ValueError("Invalid metric. Choose 'cosine' or 'euclidean'.")
     
